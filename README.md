@@ -17,6 +17,7 @@ alias kge="kubectl get events --sort-by=lastTimestamp --field-selector type!=Nor
     - [View Events for All Pods](#view-events-for-all-pods)
     - [View Events for a Specific Pod](#view-events-for-a-specific-pod)
     - [View Non-Normal Events](#view-non-normal-events)
+    - [Specify Namespace](#specify-namespace)
     - [Interactive Mode](#interactive-mode)
     - [Shell Completion](#shell-completion)
       - [For zsh](#for-zsh)
@@ -55,12 +56,35 @@ kge <pod-name>
 View only non-normal events (warnings and errors) for all pods:
 
 ```bash
-kge --non-normal
+kge --exceptions-only
 # or
-kge -n
+kge -e
 ```
 
 In interactive mode, you can select "All pods with non-normal events" from the menu.
+
+### Specify Namespace
+
+View events from a specific namespace:
+
+```bash
+kge -n mynamespace
+# or
+kge --namespace mynamespace
+```
+
+You can combine this with other options:
+
+```bash
+# View all events in a specific namespace
+kge -A -n mynamespace
+
+# View non-normal events in a specific namespace
+kge -e -n mynamespace
+
+# View events for a specific pod in a specific namespace
+kge -n mynamespace my-pod
+```
 
 ### Interactive Mode
 
@@ -100,7 +124,8 @@ _kge() {
 | Option | Description |
 |--------|-------------|
 | `-A, --all` | Get events for all pods in the current namespace |
-| `-n, --non-normal` | Show only non-normal events (warnings and errors) |
+| `-n, --namespace` | Specify the namespace to use |
+| `-e, --exceptions-only` | Show only non-normal events (warnings and errors) |
 | `--complete` | List pods for shell completion (internal use) |
 | `--completion=zsh` | Generate zsh completion script |
 
@@ -109,6 +134,7 @@ _kge() {
 - View events for all pods in a namespace
 - View events for a specific pod
 - View only non-normal events (warnings and errors)
+- Specify custom namespace
 - Interactive pod selection
 - Shell completion support
 - Automatic namespace detection

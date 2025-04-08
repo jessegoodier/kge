@@ -133,7 +133,8 @@ def main():
     parser = argparse.ArgumentParser(description='View Kubernetes events')
     parser.add_argument('pod', nargs='?', help='Pod name to view events for')
     parser.add_argument('-A', '--all', action='store_true', help='Get events for all pods')
-    parser.add_argument('-n', '--non-normal', action='store_true', help='Show only non-normal events')
+    parser.add_argument('-n', '--namespace', help='Specify namespace to use')
+    parser.add_argument('-e', '--exceptions-only', action='store_true', help='Show only non-normal events')
     parser.add_argument('--complete', action='store_true', help='List pods for shell completion')
     parser.add_argument('--completion', choices=['zsh'], help='Generate shell completion script')
     args = parser.parse_args()
@@ -157,16 +158,16 @@ def main():
 compdef _kge kge""")
         sys.exit(0)
 
-    # Get current namespace
-    namespace = get_current_namespace()
-    print(f"{Fore.CYAN}Current namespace: {namespace}{Style.RESET_ALL}")
+    # Get namespace (use specified or current)
+    namespace = args.namespace if args.namespace else get_current_namespace()
+    print(f"{Fore.CYAN}Using namespace: {namespace}{Style.RESET_ALL}")
 
     # Handle direct pod name argument
     if args.pod:
         print(f"{Fore.CYAN}Getting events for pod: {args.pod}{Style.RESET_ALL}")
         print(f"{Fore.CYAN}{'-' * 40}{Style.RESET_ALL}")
         try:
-            events = get_events_for_pod(namespace, args.pod, args.non_normal)
+            events = get_events_for_pod(namespace, args.pod, args.exceptions_only)
             print(events)
             sys.exit(0)
         except Exception as e:
@@ -178,7 +179,7 @@ compdef _kge kge""")
         print(f"{Fore.CYAN}Getting events for all pods{Style.RESET_ALL}")
         print(f"{Fore.CYAN}{'-' * 40}{Style.RESET_ALL}")
         try:
-            events = get_all_events(namespace, args.non_normal)
+            events = get_all_events(namespace, args.exceptions_only)
             print(events)
             sys.exit(0)
         except Exception as e:
@@ -207,7 +208,7 @@ compdef _kge kge""")
         print(f"\n{Fore.CYAN}Getting events for all pods{Style.RESET_ALL}")
         print(f"{Fore.CYAN}{'-' * 40}{Style.RESET_ALL}")
         try:
-            events = get_all_events(namespace)
+            events = get_all_events(namespace, args.exceptions_only)
             print(events)
         except Exception as e:
             print(f"{Fore.RED}Error getting events: {e}{Style.RESET_ALL}")
@@ -216,7 +217,7 @@ compdef _kge kge""")
         print(f"\n{Fore.CYAN}Getting events for pod: {selected_pod}{Style.RESET_ALL}")
         print(f"{Fore.CYAN}{'-' * 40}{Style.RESET_ALL}")
         try:
-            events = get_events_for_pod(namespace, selected_pod)
+            events = get_events_for_pod(namespace, selected_pod, args.exceptions_only)
             print(events)
         except Exception as e:
             print(f"{Fore.RED}Error getting events: {e}{Style.RESET_ALL}")
