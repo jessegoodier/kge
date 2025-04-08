@@ -1,68 +1,119 @@
 import unittest
-from unittest.mock import patch
-from kge.cli.main import parse_args
+from unittest.mock import patch, MagicMock
+from kge.cli.main import get_events_for_pod, get_all_events, get_k8s_client
 
 class TestCLI(unittest.TestCase):
-    def test_parse_args_all_flag(self):
-        with patch('sys.argv', ['kge', '-A']):
-            args = parse_args()
-            self.assertTrue(args.all)
-            self.assertFalse(args.complete)
-            self.assertIsNone(args.completion)
-            self.assertIsNone(args.pod_name)
+    @patch('kge.cli.main.get_k8s_client')
+    def test_get_events_for_pod(self, mock_get_client):
+        mock_v1 = MagicMock()
+        mock_get_client.return_value = mock_v1
+        
+        # Mock the list_namespaced_event response
+        mock_event = MagicMock()
+        mock_event.type = 'Normal'
+        mock_event.last_timestamp = '2023-01-01T00:00:00Z'
+        mock_event.reason = 'Created'
+        mock_event.message = 'Test message'
+        mock_v1.list_namespaced_event.return_value.items = [mock_event]
+        
+        result = get_events_for_pod('default', 'test-pod')
+        
+        # Verify the field selector
+        mock_v1.list_namespaced_event.assert_called_once()
+        call_args = mock_v1.list_namespaced_event.call_args[1]
+        self.assertEqual(call_args['field_selector'], 'involvedObject.name=test-pod')
+        
+        # Verify the output format
+        self.assertIn('Normal', result)
+        self.assertIn('Created', result)
+        self.assertIn('Test message', result)
 
-        with patch('sys.argv', ['kge', '--all']):
-            args = parse_args()
-            self.assertTrue(args.all)
-            self.assertFalse(args.complete)
-            self.assertIsNone(args.completion)
-            self.assertIsNone(args.pod_name)
+    @patch('kge.cli.main.get_k8s_client')
+    def test_get_all_events(self, mock_get_client):
+        mock_v1 = MagicMock()
+        mock_get_client.return_value = mock_v1
+        
+        # Mock the list_namespaced_event response
+        mock_event = MagicMock()
+        mock_event.type = 'Normal'
+        mock_event.last_timestamp = '2023-01-01T00:00:00Z'
+        mock_event.reason = 'Created'
+        mock_event.message = 'Test message'
+        mock_v1.list_namespaced_event.return_value.items = [mock_event]
+        
+        result = get_all_events('default')
+        
+        # Verify the field selector is None for all events
+        mock_v1.list_namespaced_event.assert_called_once()
+        call_args = mock_v1.list_namespaced_event.call_args[1]
+        self.assertIsNone(call_args.get('field_selector'))
+        
+        # Verify the output format
+        self.assertIn('Normal', result)
+        self.assertIn('Created', result)
+        self.assertIn('Test message', result)
 
-    def test_parse_args_complete_flag(self):
-        with patch('sys.argv', ['kge', '--complete']):
-            args = parse_args()
-            self.assertFalse(args.all)
-            self.assertTrue(args.complete)
-            self.assertIsNone(args.completion)
-            self.assertIsNone(args.pod_name)
+    @patch('kge.cli.main.get_k8s_client')
+    def test_get_events_for_pod_non_normal(self, mock_get_client):
+        mock_v1 = MagicMock()
+        mock_get_client.return_value = mock_v1
+        
+        # Mock the list_namespaced_event response
+        mock_event = MagicMock()
+        mock_event.type = 'Warning'
+        mock_event.last_timestamp = '2023-01-01T00:00:00Z'
+        mock_event.reason = 'Failed'
+        mock_event.message = 'Test message'
+        mock_v1.list_namespaced_event.return_value.items = [mock_event]
+        
+        result = get_events_for_pod('default', 'test-pod', non_normal=True)
+        
+        # Verify the field selector includes non-normal filter
+        mock_v1.list_namespaced_event.assert_called_once()
+        call_args = mock_v1.list_namespaced_event.call_args[1]
+        self.assertIn('type!=Normal', call_args['field_selector'])
+        
+        # Verify the output format
+        self.assertIn('Warning', result)
+        self.assertIn('Failed', result)
+        self.assertIn('Test message', result)
 
-    def test_parse_args_completion_zsh(self):
-        with patch('sys.argv', ['kge', '--completion=zsh']):
-            args = parse_args()
-            self.assertFalse(args.all)
-            self.assertFalse(args.complete)
-            self.assertEqual(args.completion, 'zsh')
-            self.assertIsNone(args.pod_name)
+    @patch('kge.cli.main.get_k8s_client')
+    def test_get_all_events_non_normal(self, mock_get_client):
+        mock_v1 = MagicMock()
+        mock_get_client.return_value = mock_v1
+        
+        # Mock the list_namespaced_event response
+        mock_event = MagicMock()
+        mock_event.type = 'Warning'
+        mock_event.last_timestamp = '2023-01-01T00:00:00Z'
+        mock_event.reason = 'Failed'
+        mock_event.message = 'Test message'
+        mock_v1.list_namespaced_event.return_value.items = [mock_event]
+        
+        result = get_all_events('default', non_normal=True)
+        
+        # Verify the field selector includes non-normal filter
+        mock_v1.list_namespaced_event.assert_called_once()
+        call_args = mock_v1.list_namespaced_event.call_args[1]
+        self.assertEqual(call_args['field_selector'], 'type!=Normal')
+        
+        # Verify the output format
+        self.assertIn('Warning', result)
+        self.assertIn('Failed', result)
+        self.assertIn('Test message', result)
 
-    def test_parse_args_pod_name(self):
-        with patch('sys.argv', ['kge', 'my-pod']):
-            args = parse_args()
-            self.assertFalse(args.all)
-            self.assertFalse(args.complete)
-            self.assertIsNone(args.completion)
-            self.assertEqual(args.pod_name, 'my-pod')
-
-    def test_parse_args_no_args(self):
-        with patch('sys.argv', ['kge']):
-            args = parse_args()
-            self.assertFalse(args.all)
-            self.assertFalse(args.complete)
-            self.assertIsNone(args.completion)
-            self.assertIsNone(args.pod_name)
-
-    def test_parse_args_mutually_exclusive(self):
-        # Test that mutually exclusive arguments raise an error
-        with patch('sys.argv', ['kge', '-A', '--complete']):
-            with self.assertRaises(SystemExit):
-                parse_args()
-
-        with patch('sys.argv', ['kge', '-A', '--completion=zsh']):
-            with self.assertRaises(SystemExit):
-                parse_args()
-
-        with patch('sys.argv', ['kge', '--complete', '--completion=zsh']):
-            with self.assertRaises(SystemExit):
-                parse_args()
+    def test_get_k8s_client(self):
+        with patch('kge.cli.main.config.load_kube_config') as mock_load_config:
+            with patch('kge.cli.main.client.CoreV1Api') as mock_api:
+                mock_load_config.return_value = None
+                mock_api.return_value = 'mock_client'
+                
+                result = get_k8s_client()
+                
+                mock_load_config.assert_called_once()
+                mock_api.assert_called_once()
+                self.assertEqual(result, 'mock_client')
 
 if __name__ == '__main__':
     unittest.main() 
