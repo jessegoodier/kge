@@ -1,0 +1,14 @@
+#compdef kge
+
+# Zsh completion for kge
+
+_kge() {
+  local -a pods
+  # Get pods list from the Python script
+  pods=($(kge --complete))
+  
+  # Define completion options
+  _describe 'pods' pods
+}
+
+_kge "$@"

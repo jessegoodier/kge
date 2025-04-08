@@ -1,0 +1,149 @@
+#!/usr/bin/env python3
+
+import subprocess
+import sys
+import time
+from typing import List, Dict
+from functools import lru_cache
+from concurrent.futures import ThreadPoolExecutor
+
+# Cache pod list for 30 seconds
+POD_CACHE_DURATION = 30
+pod_cache: Dict[str, tuple[List[str], float]] = {}
+
+def run_command(command: List[str], timeout: int = 5) -> str:
+    """Execute a shell command and return its output with timeout."""
+    try:
+        return subprocess.check_output(
+            command, 
+            text=True, 
+            timeout=timeout,
+            stderr=subprocess.DEVNULL
+        ).strip()
+    except subprocess.TimeoutExpired:
+        print(f"Command timed out: {' '.join(command)}")
+        sys.exit(1)
+    except subprocess.CalledProcessError as e:
+        print(f"Error executing command {' '.join(command)}: {e}")
+        sys.exit(1)
+
+@lru_cache(maxsize=1)
+def get_current_namespace() -> str:
+    """Get the current Kubernetes namespace with caching."""
+    try:
+        namespace = run_command([
+            "kubectl", "config", "view", "--minify",
+            "--output", "jsonpath={..namespace}"
+        ])
+        return namespace if namespace else "default"
+    except subprocess.CalledProcessError:
+        return "default"
+
+def get_pods(namespace: str) -> List[str]:
+    """Get list of pods in the specified namespace with caching."""
+    current_time = time.time()
+    
+    # Check cache
+    if namespace in pod_cache:
+        cached_pods, cache_time = pod_cache[namespace]
+        if current_time - cache_time < POD_CACHE_DURATION:
+            return cached_pods
+    
+    # Fetch fresh data
+    pods = run_command([
+        "kubectl", "get", "pods", "-n", namespace,
+        "--no-headers", "-o", "custom-columns=:metadata.name"
+    ]).splitlines()
+    
+    # Update cache
+    pod_cache[namespace] = (pods, current_time)
+    return pods
+
+def get_events_for_pod(namespace: str, pod: str) -> str:
+    """Get events for a specific pod."""
+    return run_command([
+        "kubectl", "get", "events", "-n", namespace,
+        "--field-selector", f"involvedObject.name={pod}"
+    ])
+
+def get_all_events(namespace: str) -> str:
+    """Get all events in the namespace."""
+    return run_command([
+        "kubectl", "get", "events", "-n", namespace
+    ])
+
+def list_pods_for_completion():
+    """List pods for zsh completion."""
+    namespace = get_current_namespace()
+    pods = get_pods(namespace)
+    print(" ".join(pods))
+    sys.exit(0)
+
+def display_menu(pods: List[str]) -> None:
+    """Display numbered menu of pods."""
+    print("Select a pod:")
+    print("  0) All pods")
+    for i, pod in enumerate(pods, 1):
+        print(f"{i:3d}) {pod}")
+
+def get_user_selection(max_value: int) -> int:
+    """Get and validate user selection."""
+    while True:
+        try:
+            selection = int(input(f"Enter pod number (0-{max_value}): "))
+            if 0 <= selection <= max_value:
+                return selection
+            print(f"Invalid selection. Please enter a number between 0 and {max_value}")
+        except ValueError:
+            print("Please enter a valid number")
+
+def main():
+    # Check if kubectl is installed
+    try:
+        subprocess.check_call(
+            ["kubectl", "version", "--client"], 
+            stdout=subprocess.DEVNULL, 
+            stderr=subprocess.DEVNULL,
+            timeout=2
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+        print("Error: kubectl is not installed or not responding. Please install it first.")
+        sys.exit(1)
+
+    # Check if we're being called for completion
+    if len(sys.argv) > 1 and sys.argv[1] == "--complete":
+        list_pods_for_completion()
+
+    # Normal execution
+    namespace = get_current_namespace()
+    print(f"Current namespace: {namespace}")
+    print("Fetching pods...")
+
+    pods = get_pods(namespace)
+    if not pods:
+        print(f"No pods found in namespace {namespace}")
+        sys.exit(1)
+
+    display_menu(pods)
+    selection = get_user_selection(len(pods))
+    
+    if selection == 0:
+        print("\nGetting events for all pods")
+        print("-" * 40)
+        try:
+            events = get_all_events(namespace)
+            print(events)
+        except subprocess.CalledProcessError as e:
+            print(f"Error getting events: {e}")
+    else:
+        selected_pod = pods[selection - 1]
+        print(f"\nGetting events for pod: {selected_pod}")
+        print("-" * 40)
+        try:
+            events = get_events_for_pod(namespace, selected_pod)
+            print(events)
+        except subprocess.CalledProcessError as e:
+            print(f"Error getting events: {e}")
+
+if __name__ == "__main__":
+    main()
