@@ -1,6 +1,12 @@
 # kge-kubectl-get-events
 
-A kubectl plugin for viewing Kubernetes events in a user-friendly way.
+A kubernetes utility for viewing pod events in a user-friendly way.
+There are many problems that are most easily fixed by understand the recent events for the pods. 
+The best alternative to this tool is:
+
+```sh
+alias kge="kubectl get events --sort-by=lastTimestamp --field-selector type!=Normal"
+```
 
 ## Table of Contents
 
@@ -10,6 +16,7 @@ A kubectl plugin for viewing Kubernetes events in a user-friendly way.
   - [Usage](#usage)
     - [View Events for All Pods](#view-events-for-all-pods)
     - [View Events for a Specific Pod](#view-events-for-a-specific-pod)
+    - [View Non-Normal Events](#view-non-normal-events)
     - [Interactive Mode](#interactive-mode)
     - [Shell Completion](#shell-completion)
       - [For zsh](#for-zsh)
@@ -43,6 +50,18 @@ View events for a specific pod:
 kge <pod-name>
 ```
 
+### View Non-Normal Events
+
+View only non-normal events (warnings and errors) for all pods:
+
+```bash
+kge --non-normal
+# or
+kge -n
+```
+
+In interactive mode, you can select "All pods with non-normal events" from the menu.
+
 ### Interactive Mode
 
 Run the tool without arguments to enter interactive mode:
@@ -51,7 +70,7 @@ Run the tool without arguments to enter interactive mode:
 kge
 ```
 
-This will display a menu of all pods in the current namespace, allowing you to select which pod's events to view.
+This will display a menu of all pods in the current namespace, allowing you to select which pod's events to view. The menu includes an option to view all non-normal events.
 
 ### Shell Completion
 
@@ -81,6 +100,7 @@ _kge() {
 | Option | Description |
 |--------|-------------|
 | `-A, --all` | Get events for all pods in the current namespace |
+| `-n, --non-normal` | Show only non-normal events (warnings and errors) |
 | `--complete` | List pods for shell completion (internal use) |
 | `--completion=zsh` | Generate zsh completion script |
 
@@ -88,6 +108,7 @@ _kge() {
 
 - View events for all pods in a namespace
 - View events for a specific pod
+- View only non-normal events (warnings and errors)
 - Interactive pod selection
 - Shell completion support
 - Automatic namespace detection

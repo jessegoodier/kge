@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="kge-kubectl-get-events",
-    version="0.1.5",
+    version="0.1.6",
     author="Jesse",
     author_email="",  # Add your email here
     description="A kubectl plugin for viewing Kubernetes events",
