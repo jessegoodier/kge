@@ -1,42 +1,31 @@
 #!/usr/bin/env python3
 
-import subprocess
 import sys
 import time
 from typing import List, Dict
 from functools import lru_cache
-from concurrent.futures import ThreadPoolExecutor
+from kubernetes import client, config
+from kubernetes.client import ApiException
 
 # Cache pod list for 30 seconds
 POD_CACHE_DURATION = 30
 pod_cache: Dict[str, tuple[List[str], float]] = {}
 
-def run_command(command: List[str], timeout: int = 5) -> str:
-    """Execute a shell command and return its output with timeout."""
+def get_k8s_client():
+    """Initialize and return a Kubernetes client."""
     try:
-        return subprocess.check_output(
-            command, 
-            text=True, 
-            timeout=timeout,
-            stderr=subprocess.DEVNULL
-        ).strip()
-    except subprocess.TimeoutExpired:
-        print(f"Command timed out: {' '.join(command)}")
-        sys.exit(1)
-    except subprocess.CalledProcessError as e:
-        print(f"Error executing command {' '.join(command)}: {e}")
+        config.load_kube_config()
+        return client.CoreV1Api()
+    except Exception as e:
+        print(f"Error initializing Kubernetes client: {e}")
         sys.exit(1)
 
 @lru_cache(maxsize=1)
 def get_current_namespace() -> str:
     """Get the current Kubernetes namespace with caching."""
     try:
-        namespace = run_command([
-            "kubectl", "config", "view", "--minify",
-            "--output", "jsonpath={..namespace}"
-        ])
-        return namespace if namespace else "default"
-    except subprocess.CalledProcessError:
+        return config.list_kube_config_contexts()[1]['context']['namespace'] or "default"
+    except Exception:
         return "default"
 
 def get_pods(namespace: str) -> List[str]:
@@ -50,27 +39,52 @@ def get_pods(namespace: str) -> List[str]:
             return cached_pods
     
     # Fetch fresh data
-    pods = run_command([
-        "kubectl", "get", "pods", "-n", namespace,
-        "--no-headers", "-o", "custom-columns=:metadata.name"
-    ]).splitlines()
-    
-    # Update cache
-    pod_cache[namespace] = (pods, current_time)
-    return pods
+    try:
+        v1 = get_k8s_client()
+        pods = v1.list_namespaced_pod(namespace)
+        pod_names = [pod.metadata.name for pod in pods.items]
+        
+        # Update cache
+        pod_cache[namespace] = (pod_names, current_time)
+        return pod_names
+    except ApiException as e:
+        print(f"Error fetching pods: {e}")
+        sys.exit(1)
 
 def get_events_for_pod(namespace: str, pod: str) -> str:
     """Get events for a specific pod."""
-    return run_command([
-        "kubectl", "get", "events", "-n", namespace,
-        "--field-selector", f"involvedObject.name={pod}"
-    ])
+    try:
+        v1 = get_k8s_client()
+        events = v1.list_namespaced_event(
+            namespace,
+            field_selector=f"involvedObject.name={pod}"
+        )
+        return format_events(events)
+    except ApiException as e:
+        print(f"Error fetching events: {e}")
+        sys.exit(1)
 
 def get_all_events(namespace: str) -> str:
     """Get all events in the namespace."""
-    return run_command([
-        "kubectl", "get", "events", "-n", namespace
-    ])
+    try:
+        v1 = get_k8s_client()
+        events = v1.list_namespaced_event(namespace)
+        return format_events(events)
+    except ApiException as e:
+        print(f"Error fetching events: {e}")
+        sys.exit(1)
+
+def format_events(events) -> str:
+    """Format events into a readable string."""
+    if not events.items:
+        return "No events found"
+    
+    output = []
+    for event in events.items:
+        output.append(
+            f"{event.last_timestamp} {event.type} {event.reason}: {event.message}"
+        )
+    return "\n".join(output)
 
 def list_pods_for_completion():
     """List pods for zsh completion."""
@@ -98,27 +112,48 @@ def get_user_selection(max_value: int) -> int:
             print("Please enter a valid number")
 
 def main():
-    # Check if kubectl is installed
+    # Check if we can connect to Kubernetes
     try:
-        subprocess.check_call(
-            ["kubectl", "version", "--client"], 
-            stdout=subprocess.DEVNULL, 
-            stderr=subprocess.DEVNULL,
-            timeout=2
-        )
-    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
-        print("Error: kubectl is not installed or not responding. Please install it first.")
+        get_k8s_client()
+    except Exception as e:
+        print(f"Error connecting to Kubernetes: {e}")
         sys.exit(1)
 
     # Check if we're being called for completion
     if len(sys.argv) > 1 and sys.argv[1] == "--complete":
         list_pods_for_completion()
 
-    # Normal execution
+    # Get current namespace
     namespace = get_current_namespace()
     print(f"Current namespace: {namespace}")
-    print("Fetching pods...")
 
+    # Handle -A flag for all events
+    if len(sys.argv) > 1 and sys.argv[1] == "-A":
+        print("Getting events for all pods")
+        print("-" * 40)
+        try:
+            events = get_all_events(namespace)
+            print(events)
+            sys.exit(0)
+        except Exception as e:
+            print(f"Error getting events: {e}")
+            sys.exit(1)
+
+    # If a pod name is provided as a direct argument
+    if len(sys.argv) > 1 and not sys.argv[1].startswith("-"):
+        pod_name = sys.argv[1]
+        print(f"Getting events for pod: {pod_name}")
+        print("-" * 40)
+        try:
+            events = get_events_for_pod(namespace, pod_name)
+            print(events)
+            sys.exit(0)
+        except Exception as e:
+            print(f"Error getting events: {e}")
+            sys.exit(1)
+
+    # Normal interactive execution
+    print("Fetching pods...")
     pods = get_pods(namespace)
     if not pods:
         print(f"No pods found in namespace {namespace}")
@@ -133,7 +168,7 @@ def main():
         try:
             events = get_all_events(namespace)
             print(events)
-        except subprocess.CalledProcessError as e:
+        except Exception as e:
             print(f"Error getting events: {e}")
     else:
         selected_pod = pods[selection - 1]
@@ -142,7 +177,7 @@ def main():
         try:
             events = get_events_for_pod(namespace, selected_pod)
             print(events)
-        except subprocess.CalledProcessError as e:
+        except Exception as e:
             print(f"Error getting events: {e}")
 
 if __name__ == "__main__":
