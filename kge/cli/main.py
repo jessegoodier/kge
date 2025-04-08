@@ -128,6 +128,9 @@ def get_user_selection(max_value: int) -> int:
             print(f"Invalid selection. Please enter a number between 0 and {max_value} or 00")
         except ValueError:
             print("Please enter a valid number")
+        except KeyboardInterrupt:
+            print("\nExiting gracefully...")
+            sys.exit(0)
 
 def main():
     parser = argparse.ArgumentParser(description='View Kubernetes events')
@@ -223,4 +226,11 @@ compdef _kge kge""")
             print(f"{Fore.RED}Error getting events: {e}{Style.RESET_ALL}")
 
 if __name__ == "__main__":
-    main() 
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nExiting gracefully...")
+        sys.exit(0)
+    except Exception as e:
+        print(f"\nError: {e}")
+        sys.exit(1)

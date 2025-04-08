@@ -143,5 +143,4 @@ _kge() {
 ## Requirements
 
 - Python 3.6 or higher
-- Kubernetes Python client
-- kubectl configured with access to a Kubernetes cluster 
+- Valid Kubeconfig in the environment
