@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kge-kubectl-get-events"
+version = "0.1.9"
+description = "A kubernetes utility for viewing pod events in a user-friendly way"
+readme = "README.md"
+requires-python = ">=3.7"
+license = "MIT"
+authors = [
+    { name = "Jesse Goodier", email = "31039225+jessegoodier@users.noreply.github.com" }
+]
+dependencies = [
+    "kubernetes>=12.0.0",
+    "colorama>=0.4.6"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+
+[project.scripts]
+kge = "kge.cli.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["kge"] 

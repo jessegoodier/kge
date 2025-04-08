@@ -5,6 +5,10 @@ from typing import List, Dict
 from functools import lru_cache
 from kubernetes import client, config
 from kubernetes.client import ApiException
+from colorama import init, Fore, Style
+
+# Initialize colorama
+init()
 
 # Cache pod list for 30 seconds
 POD_CACHE_DURATION = 30
@@ -80,14 +84,19 @@ def get_all_events(namespace: str, non_normal: bool = False) -> str:
         sys.exit(1)
 
 def format_events(events) -> str:
-    """Format events into a readable string."""
+    """Format events into a readable string with color."""
     if not events.items:
-        return "No events found"
+        return f"{Fore.YELLOW}No events found{Style.RESET_ALL}"
     
     output = []
     for event in events.items:
+        # Color based on event type
+        color = Fore.GREEN if event.type == "Normal" else Fore.RED
         output.append(
-            f"{event.last_timestamp} {event.type} {event.reason}: {event.message}"
+            f"{Fore.CYAN}{event.last_timestamp}{Style.RESET_ALL} "
+            f"{color}{event.type}{Style.RESET_ALL} "
+            f"{Fore.YELLOW}{event.reason}{Style.RESET_ALL}: "
+            f"{event.message}"
         )
     return "\n".join(output)
 
@@ -99,12 +108,12 @@ def list_pods_for_completion():
     sys.exit(0)
 
 def display_menu(pods: List[str]) -> None:
-    """Display numbered menu of pods."""
-    print("Select a pod:")
-    print("  0) All pods")
-    print(" 00) All pods with non-normal events")
+    """Display numbered menu of pods with color."""
+    print(f"{Fore.CYAN}Select a pod:{Style.RESET_ALL}")
+    print(f"  {Fore.GREEN}0{Style.RESET_ALL}) All pods")
+    print(f"  {Fore.GREEN}00{Style.RESET_ALL}) All pods with non-normal events")
     for i, pod in enumerate(pods, 1):
-        print(f"{i:3d}) {pod}")
+        print(f"{Fore.GREEN}{i:3d}{Style.RESET_ALL}) {pod}")
 
 def get_user_selection(max_value: int) -> int:
     """Get and validate user selection."""
@@ -133,7 +142,7 @@ def main():
     try:
         get_k8s_client()
     except Exception as e:
-        print(f"Error connecting to Kubernetes: {e}")
+        print(f"{Fore.RED}Error connecting to Kubernetes: {e}{Style.RESET_ALL}")
         sys.exit(1)
 
     # Handle completion requests
@@ -150,67 +159,67 @@ compdef _kge kge""")
 
     # Get current namespace
     namespace = get_current_namespace()
-    print(f"Current namespace: {namespace}")
+    print(f"{Fore.CYAN}Current namespace: {namespace}{Style.RESET_ALL}")
 
     # Handle direct pod name argument
     if args.pod:
-        print(f"Getting events for pod: {args.pod}")
-        print("-" * 40)
+        print(f"{Fore.CYAN}Getting events for pod: {args.pod}{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}{'-' * 40}{Style.RESET_ALL}")
         try:
             events = get_events_for_pod(namespace, args.pod, args.non_normal)
             print(events)
             sys.exit(0)
         except Exception as e:
-            print(f"Error getting events: {e}")
+            print(f"{Fore.RED}Error getting events: {e}{Style.RESET_ALL}")
             sys.exit(1)
 
     # Handle -A flag for all events
     if args.all:
-        print("Getting events for all pods")
-        print("-" * 40)
+        print(f"{Fore.CYAN}Getting events for all pods{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}{'-' * 40}{Style.RESET_ALL}")
         try:
             events = get_all_events(namespace, args.non_normal)
             print(events)
             sys.exit(0)
         except Exception as e:
-            print(f"Error getting events: {e}")
+            print(f"{Fore.RED}Error getting events: {e}{Style.RESET_ALL}")
             sys.exit(1)
 
     # Normal interactive execution
-    print("Fetching pods...")
+    print(f"{Fore.CYAN}Fetching pods...{Style.RESET_ALL}")
     pods = get_pods(namespace)
     if not pods:
-        print(f"No pods found in namespace {namespace}")
+        print(f"{Fore.YELLOW}No pods found in namespace {namespace}{Style.RESET_ALL}")
         sys.exit(1)
 
     display_menu(pods)
     selection = get_user_selection(len(pods))
     
     if selection == -1:  # Non-normal events for all pods
-        print("\nGetting non-normal events for all pods")
-        print("-" * 40)
+        print(f"\n{Fore.CYAN}Getting non-normal events for all pods{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}{'-' * 40}{Style.RESET_ALL}")
         try:
             events = get_all_events(namespace, non_normal=True)
             print(events)
         except Exception as e:
-            print(f"Error getting events: {e}")
+            print(f"{Fore.RED}Error getting events: {e}{Style.RESET_ALL}")
     elif selection == 0:  # All events for all pods
-        print("\nGetting events for all pods")
-        print("-" * 40)
+        print(f"\n{Fore.CYAN}Getting events for all pods{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}{'-' * 40}{Style.RESET_ALL}")
         try:
             events = get_all_events(namespace)
             print(events)
         except Exception as e:
-            print(f"Error getting events: {e}")
+            print(f"{Fore.RED}Error getting events: {e}{Style.RESET_ALL}")
     else:  # Events for specific pod
         selected_pod = pods[selection - 1]
-        print(f"\nGetting events for pod: {selected_pod}")
-        print("-" * 40)
+        print(f"\n{Fore.CYAN}Getting events for pod: {selected_pod}{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}{'-' * 40}{Style.RESET_ALL}")
         try:
             events = get_events_for_pod(namespace, selected_pod)
             print(events)
         except Exception as e:
-            print(f"Error getting events: {e}")
+            print(f"{Fore.RED}Error getting events: {e}{Style.RESET_ALL}")
 
 if __name__ == "__main__":
     main() 

@@ -5,10 +5,10 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="kge-kubectl-get-events",
-    version="0.1.8",
-    author="Jesse",
-    author_email="",  # Add your email here
-    description="A kubectl plugin for viewing Kubernetes events",
+    version="0.1.9",
+    author="Jesse Goodier",
+    author_email="31039225+jessegoodier@users.noreply.github.com",
+    description="A kubernetes utility for viewing pod events in a user-friendly way",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/jessegoodier/kge",
