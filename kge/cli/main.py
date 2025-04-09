@@ -31,6 +31,12 @@ def get_current_namespace() -> str:
     except Exception:
         return "default"
 
+def get_failed_create_pods(namespace: str) -> List[str]:
+    """Get list of pods in the specified namespace with caching."""
+    v1 = get_k8s_client()
+    pods = v1.list_namespaced_pod(namespace, field_selector="status.phase=Failed")
+    return [pod.metadata.name for pod in pods.items]
+
 def get_pods(namespace: str) -> List[str]:
     """Get list of pods in the specified namespace with caching."""
     current_time = time.time()
@@ -104,14 +110,16 @@ def list_pods_for_completion():
     """List pods for zsh completion."""
     namespace = get_current_namespace()
     pods = get_pods(namespace)
+    failed_pods = get_failed_create_pods(namespace)
+    pods.extend(failed_pods)
     print(" ".join(pods))
     sys.exit(0)
 
 def display_menu(pods: List[str]) -> None:
     """Display numbered menu of pods with color."""
     print(f"{Fore.CYAN}Select a pod:{Style.RESET_ALL}")
-    print(f"  {Fore.GREEN}0{Style.RESET_ALL}) All pods")
-    print(f"  {Fore.GREEN}00{Style.RESET_ALL}) All pods with non-normal events")
+    print(f"  {Fore.GREEN}0{Style.RESET_ALL}) Abnormal events for all pods")
+    print(f"  {Fore.GREEN}00{Style.RESET_ALL}) All pods, all events")
     for i, pod in enumerate(pods, 1):
         print(f"{Fore.GREEN}{i:3d}{Style.RESET_ALL}) {pod}")
 
@@ -192,6 +200,8 @@ compdef _kge kge""")
     # Normal interactive execution
     print(f"{Fore.CYAN}Fetching pods...{Style.RESET_ALL}")
     pods = get_pods(namespace)
+    failed_pods = get_failed_create_pods(namespace)
+    pods.extend(failed_pods)
     if not pods:
         print(f"{Fore.YELLOW}No pods found in namespace {namespace}{Style.RESET_ALL}")
         sys.exit(1)
@@ -199,7 +209,7 @@ compdef _kge kge""")
     display_menu(pods)
     selection = get_user_selection(len(pods))
     
-    if selection == -1:  # Non-normal events for all pods
+    if selection == 0:  # Non-normal events for all pods
         print(f"\n{Fore.CYAN}Getting non-normal events for all pods{Style.RESET_ALL}")
         print(f"{Fore.CYAN}{'-' * 40}{Style.RESET_ALL}")
         try:
@@ -207,7 +217,7 @@ compdef _kge kge""")
             print(events)
         except Exception as e:
             print(f"{Fore.RED}Error getting events: {e}{Style.RESET_ALL}")
-    elif selection == 0:  # All events for all pods
+    elif selection == -1:  # All events for all pods
         print(f"\n{Fore.CYAN}Getting events for all pods{Style.RESET_ALL}")
         print(f"{Fore.CYAN}{'-' * 40}{Style.RESET_ALL}")
         try:
