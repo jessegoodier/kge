@@ -10,9 +10,19 @@ from colorama import init, Fore, Style
 # Initialize colorama
 init()
 
-# Cache pod list for 30 seconds
-POD_CACHE_DURATION = 30
+# Cache duration for pods and replicasets
+CACHE_DURATION = 10
 pod_cache: Dict[str, tuple[List[str], float]] = {}
+replicaset_cache: Dict[str, tuple[List[str], float]] = {}
+
+# class CustomHelpFormatter(argparse.HelpFormatter):
+#     def __init__(self, prog):
+#         super().__init__(prog, width=240)
+
+#     def _format_usage(self, usage, actions, groups, prefix):
+#         # Set width to 240 for usage message
+#         self._width = 240
+#         return super()._format_usage(usage, actions, groups, prefix)
 
 def get_k8s_client():
     """Initialize and return a Kubernetes client."""
@@ -23,6 +33,15 @@ def get_k8s_client():
         print(f"Error initializing Kubernetes client: {e}")
         sys.exit(1)
 
+def get_k8s_apps_client():
+    """Initialize and return a Kubernetes AppsV1Api client."""
+    try:
+        config.load_kube_config()
+        return client.AppsV1Api()
+    except Exception as e:
+        print(f"Error initializing Kubernetes Apps client: {e}")
+        sys.exit(1)
+
 @lru_cache(maxsize=1)
 def get_current_namespace() -> str:
     """Get the current Kubernetes namespace with caching."""
@@ -31,12 +50,6 @@ def get_current_namespace() -> str:
     except Exception:
         return "default"
 
-def get_failed_create_pods(namespace: str) -> List[str]:
-    """Get list of pods in the specified namespace with caching."""
-    v1 = get_k8s_client()
-    pods = v1.list_namespaced_pod(namespace, field_selector="status.phase=Failed")
-    return [pod.metadata.name for pod in pods.items]
-
 def get_pods(namespace: str) -> List[str]:
     """Get list of pods in the specified namespace with caching."""
     current_time = time.time()
@@ -44,7 +57,7 @@ def get_pods(namespace: str) -> List[str]:
     # Check cache
     if namespace in pod_cache:
         cached_pods, cache_time = pod_cache[namespace]
-        if current_time - cache_time < POD_CACHE_DURATION:
+        if current_time - cache_time < CACHE_DURATION:
             return cached_pods
     
     # Fetch fresh data
@@ -106,12 +119,41 @@ def format_events(events) -> str:
         )
     return "\n".join(output)
 
+def get_failed_replicasets(namespace: str) -> List[str]:
+    """Get list of failed ReplicaSets in the specified namespace with caching."""
+    current_time = time.time()
+    
+    # Check cache
+    if namespace in replicaset_cache:
+        cached_rs, cache_time = replicaset_cache[namespace]
+        if current_time - cache_time < CACHE_DURATION:
+            return cached_rs
+    
+    # Fetch fresh data
+    try:
+        v1 = get_k8s_apps_client()
+        replicasets = v1.list_namespaced_replica_set(namespace)
+        failed_rs = []
+        for rs in replicasets.items:
+            if rs.status and rs.status.conditions:
+                for condition in rs.status.conditions:
+                    if condition.type == "ReplicaFailure":
+                        failed_rs.append(rs.metadata.name)
+                        break
+        
+        # Update cache
+        replicaset_cache[namespace] = (failed_rs, current_time)
+        return failed_rs
+    except ApiException as e:
+        print(f"Error fetching ReplicaSets: {e}")
+        return []
+
 def list_pods_for_completion():
     """List pods for zsh completion."""
     namespace = get_current_namespace()
     pods = get_pods(namespace)
-    failed_pods = get_failed_create_pods(namespace)
-    pods.extend(failed_pods)
+    failed_rs = get_failed_replicasets(namespace)
+    pods.extend(failed_rs)
     print(" ".join(pods))
     sys.exit(0)
 
@@ -141,7 +183,8 @@ def get_user_selection(max_value: int) -> int:
             sys.exit(0)
 
 def main():
-    parser = argparse.ArgumentParser(description='View Kubernetes events')
+    parser = argparse.ArgumentParser(
+        description='View Kubernetes events')
     parser.add_argument('pod', nargs='?', help='Pod name to view events for')
     parser.add_argument('-A', '--all', action='store_true', help='Get events for all pods')
     parser.add_argument('-n', '--namespace', help='Specify namespace to use')
@@ -200,8 +243,8 @@ compdef _kge kge""")
     # Normal interactive execution
     print(f"{Fore.CYAN}Fetching pods...{Style.RESET_ALL}")
     pods = get_pods(namespace)
-    failed_pods = get_failed_create_pods(namespace)
-    pods.extend(failed_pods)
+    failed_rs = get_failed_replicasets(namespace)
+    pods.extend(failed_rs)
     if not pods:
         print(f"{Fore.YELLOW}No pods found in namespace {namespace}{Style.RESET_ALL}")
         sys.exit(1)

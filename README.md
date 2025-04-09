@@ -1,17 +1,13 @@
 # kge-kubectl-get-events
 
-A kubernetes utility for viewing pod events in a user-friendly way.
-There are many problems that are most easily fixed by understand the recent events for the pods. 
-The best alternative to this tool is:
-
-```sh
-alias kge="kubectl get events --sort-by=lastTimestamp --field-selector type!=Normal"
-```
+A kubernetes utility for viewing pod and failed replicaset events in a user-friendly way.
+There are many problems that are most easily fixed by understanding the recent events.
 
 ## Table of Contents
 
 - [kge-kubectl-get-events](#kge-kubectl-get-events)
   - [Table of Contents](#table-of-contents)
+  - [Motivation/Alternatives](#motivationalternatives)
   - [Installation](#installation)
   - [Usage](#usage)
     - [View Events for All Pods](#view-events-for-all-pods)
@@ -24,6 +20,23 @@ alias kge="kubectl get events --sort-by=lastTimestamp --field-selector type!=Nor
   - [Command-line Options](#command-line-options)
   - [Features](#features)
   - [Requirements](#requirements)
+
+## Motivation/Alternatives
+
+The best alternative to this tool is:
+
+```sh
+alias kge="kubectl get events --sort-by=lastTimestamp --field-selector type!=Normal"
+```
+
+The problem with `kubectl get events` is that autocompletion doesn't allow autocomplete (or if it does, it isn't obvious).
+For example, this utility runs the command:
+
+```sh
+kubectl get events --field-selector involvedObject.name=busybox-deployment-7f49499c8
+```
+
+Which is either a lot of typing or a manual copy/paste.
 
 ## Installation
 
