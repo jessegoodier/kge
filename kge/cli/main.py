@@ -117,6 +117,7 @@ def format_events(events) -> str:
         output.append(
             f"{Fore.CYAN}{event.last_timestamp}{Style.RESET_ALL} "
             f"{color}{event.type}{Style.RESET_ALL} "
+            f"{Style.RESET_ALL}{event.involved_object.name} "
             f"{Fore.YELLOW}{event.reason}{Style.RESET_ALL}: "
             f"{event.message}"
         )
