@@ -380,9 +380,8 @@ class TestCLI(unittest.TestCase):
         mock_get_apps_client.return_value = mock_v1
         mock_time.return_value = 0  # Set initial time
         
-        # Mock API error with ApiException
-        from kubernetes.client import ApiException
-        mock_v1.list_namespaced_replica_set.side_effect = ApiException(status=500, reason="API Error")
+        # Mock API error
+        mock_v1.list_namespaced_replica_set.side_effect = Exception("API Error")
         
         # Should return empty list on error
         result = get_failed_replicasets('default')

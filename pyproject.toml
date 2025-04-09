@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "kge-kubectl-get-events"
-version = "0.2.2"
+version = "0.2.3"
 description = "A kubernetes utility for viewing pod events in a user-friendly way"
 readme = "README.md"
 requires-python = ">=3.7"

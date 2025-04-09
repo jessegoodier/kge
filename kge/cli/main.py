@@ -15,6 +15,9 @@ CACHE_DURATION = 10
 pod_cache: Dict[str, tuple[List[str], float]] = {}
 replicaset_cache: Dict[str, tuple[List[str], float]] = {}
 
+# Version information
+VERSION = "0.2.3"
+
 # class CustomHelpFormatter(argparse.HelpFormatter):
 #     def __init__(self, prog):
 #         super().__init__(prog, width=240)
@@ -164,20 +167,24 @@ def display_menu(pods: List[str]) -> None:
     print(f"  {Fore.GREEN}00{Style.RESET_ALL}) All pods, all events")
     for i, pod in enumerate(pods, 1):
         print(f"{Fore.GREEN}{i:3d}{Style.RESET_ALL}) {pod}")
+    print(f"  {Fore.GREEN}q{Style.RESET_ALL}) Quit")
 
 def get_user_selection(max_value: int) -> int:
     """Get and validate user selection."""
     while True:
         try:
-            selection = input(f"Enter pod number (0-{max_value} or 00): ")
+            selection = input(f"Enter pod number (00-{max_value} or q to quit): ")
+            if selection.lower() == "q":
+                print("\nExiting gracefully...")
+                sys.exit(0)
             if selection == "00":
                 return -1
             selection = int(selection)
             if 0 <= selection <= max_value:
                 return selection
-            print(f"Invalid selection. Please enter a number between 0 and {max_value} or 00")
+            print(f"Invalid selection. Please enter a number between 00 and {max_value} or q to quit")
         except ValueError:
-            print("Please enter a valid number")
+            print("Please enter a valid number, 00, or q to quit")
         except KeyboardInterrupt:
             print("\nExiting gracefully...")
             sys.exit(0)
@@ -191,6 +198,8 @@ def main():
     parser.add_argument('-e', '--exceptions-only', action='store_true', help='Show only non-normal events')
     parser.add_argument('--complete', action='store_true', help='List pods for shell completion')
     parser.add_argument('--completion', choices=['zsh'], help='Generate shell completion script')
+    parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {VERSION}',
+                       help='Show version information and exit')
     args = parser.parse_args()
 
     # Check if we can connect to Kubernetes
