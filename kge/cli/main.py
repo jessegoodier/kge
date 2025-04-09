@@ -16,7 +16,7 @@ pod_cache: Dict[str, tuple[List[str], float]] = {}
 replicaset_cache: Dict[str, tuple[List[str], float]] = {}
 
 # Version information
-VERSION = "0.2.4"
+VERSION = "0.2.5"
 
 # class CustomHelpFormatter(argparse.HelpFormatter):
 #     def __init__(self, prog):
@@ -164,8 +164,8 @@ def list_pods_for_completion():
 def display_menu(pods: List[str]) -> None:
     """Display numbered menu of pods with color."""
     print(f"{Fore.CYAN}Select a pod:{Style.RESET_ALL}")
-    print(f"  {Fore.GREEN}0{Style.RESET_ALL}) Abnormal events for all pods")
-    print(f"  {Fore.GREEN}00{Style.RESET_ALL}) All pods, all events")
+    print(f"  {Fore.GREEN}e{Style.RESET_ALL}) Abnormal events for all pods")
+    print(f"  {Fore.GREEN}a{Style.RESET_ALL}) All pods, all events")
     for i, pod in enumerate(pods, 1):
         print(f"{Fore.GREEN}{i:3d}{Style.RESET_ALL}) {pod}")
     print(f"  {Fore.GREEN}q{Style.RESET_ALL}) Quit")
@@ -174,18 +174,20 @@ def get_user_selection(max_value: int) -> int:
     """Get and validate user selection."""
     while True:
         try:
-            selection = input(f"Enter pod number (00-{max_value} or q to quit): ")
+            selection = input(f"Enter selection: ")
             if selection.lower() == "q":
                 print("\nExiting gracefully...")
                 sys.exit(0)
-            if selection == "00":
-                return -1
+            if selection == "a":
+                return "a"
+            if selection == "e":
+                return "e"
             selection = int(selection)
-            if 0 <= selection <= max_value:
+            if 1 <= selection <= max_value:
                 return selection
-            print(f"Invalid selection. Please enter a number between 00 and {max_value} or q to quit")
+            print(f"Invalid selection. Please enter a number between 1 and {max_value} or q to quit")
         except ValueError:
-            print("Please enter a valid number, 00, or q to quit")
+            print("Please enter a valid number, a, e or q to quit")
         except KeyboardInterrupt:
             print("\nExiting gracefully...")
             sys.exit(0)
@@ -194,7 +196,7 @@ def main():
     parser = argparse.ArgumentParser(
         description='View Kubernetes events')
     parser.add_argument('pod', nargs='?', help='Pod name to view events for')
-    parser.add_argument('-A', '--all', action='store_true', help='Get events for all pods')
+    parser.add_argument('-a', '--all', action='store_true', help='Get events for all pods')
     parser.add_argument('-n', '--namespace', help='Specify namespace to use')
     parser.add_argument('-e', '--exceptions-only', action='store_true', help='Show only non-normal events')
     parser.add_argument('--complete', action='store_true', help='List pods for shell completion')
@@ -238,7 +240,7 @@ compdef _kge kge""")
             print(f"{Fore.RED}Error getting events: {e}{Style.RESET_ALL}")
             sys.exit(1)
 
-    # Handle -A flag for all events
+    # Handle -a flag for all events
     if args.all:
         print(f"{Fore.CYAN}Getting events for all pods{Style.RESET_ALL}")
         print(f"{Fore.CYAN}{'-' * 40}{Style.RESET_ALL}")
@@ -262,7 +264,7 @@ compdef _kge kge""")
     display_menu(pods)
     selection = get_user_selection(len(pods))
     
-    if selection == 0:  # Non-normal events for all pods
+    if selection == "e":  # Non-normal events for all pods
         print(f"\n{Fore.CYAN}Getting non-normal events for all pods{Style.RESET_ALL}")
         print(f"{Fore.CYAN}{'-' * 40}{Style.RESET_ALL}")
         try:
@@ -270,7 +272,7 @@ compdef _kge kge""")
             print(events)
         except Exception as e:
             print(f"{Fore.RED}Error getting events: {e}{Style.RESET_ALL}")
-    elif selection == -1:  # All events for all pods
+    elif selection == "a":  # All events for all pods
         print(f"\n{Fore.CYAN}Getting events for all pods{Style.RESET_ALL}")
         print(f"{Fore.CYAN}{'-' * 40}{Style.RESET_ALL}")
         try:
