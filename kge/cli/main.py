@@ -16,7 +16,7 @@ pod_cache: Dict[str, tuple[List[str], float]] = {}
 replicaset_cache: Dict[str, tuple[List[str], float]] = {}
 
 # Version information
-VERSION = "0.2.3"
+VERSION = "0.2.4"
 
 # class CustomHelpFormatter(argparse.HelpFormatter):
 #     def __init__(self, prog):
