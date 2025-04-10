@@ -10,11 +10,12 @@ There are many problems that are most easily fixed by understanding the recent e
   - [Motivation/Alternatives](#motivationalternatives)
   - [Installation](#installation)
   - [Usage](#usage)
+    - [Fastest path to what you want](#fastest-path-to-what-you-want)
+    - [Interactive Mode](#interactive-mode)
     - [View Events for All Pods](#view-events-for-all-pods)
     - [View Events for a Specific Pod](#view-events-for-a-specific-pod)
     - [View Non-Normal Events](#view-non-normal-events)
     - [Specify Namespace](#specify-namespace)
-    - [Interactive Mode](#interactive-mode)
     - [Shell Completion](#shell-completion)
       - [For zsh](#for-zsh)
   - [Command-line Options](#command-line-options)
@@ -29,14 +30,21 @@ The best alternative to this tool is:
 alias kge="kubectl get events --sort-by=lastTimestamp --field-selector type!=Normal"
 ```
 
-The problem with `kubectl get events` is that autocompletion doesn't allow autocomplete (or if it does, it isn't obvious).
+The problem with `kubectl get events` is that autocompletion doesn't work.
+
 For example, this utility runs the command:
 
 ```sh
 kubectl get events --field-selector involvedObject.name=busybox-deployment-7f49499c8
 ```
 
-Which is either a lot of typing or a manual copy/paste.
+like this:
+
+```sh
+kge <tab><tab>
+```
+
+Saving loads of time.
 
 ## Installation
 
@@ -46,12 +54,28 @@ pipx install kge-kubectl-get-events
 
 ## Usage
 
+### Fastest path to what you want
+
+Show all pods with abnormal events:
+
+```bash
+kge -ea
+```
+
+### Interactive Mode
+
+Run the tool without arguments to enter interactive mode:
+
+```bash
+kge
+```
+
 ### View Events for All Pods
 
 View events for all pods in the current namespace:
 
 ```bash
-kge -A
+kge -a
 # or
 kge --all
 ```
@@ -97,14 +121,6 @@ kge -e -n mynamespace
 
 # View events for a specific pod in a specific namespace
 kge -n mynamespace my-pod
-```
-
-### Interactive Mode
-
-Run the tool without arguments to enter interactive mode:
-
-```bash
-kge
 ```
 
 This will display a menu of all pods in the current namespace, allowing you to select which pod's events to view. The menu includes an option to view all non-normal events.
