@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="kge-kubectl-get-events",
-    version="0.2.5",
+    version="0.3.0",
     author="Jesse Goodier",
     author_email="31039225+jessegoodier@users.noreply.github.com",
     description="A kubernetes utility for viewing pod events in a user-friendly way",

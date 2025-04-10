@@ -16,7 +16,7 @@ pod_cache: Dict[str, tuple[List[str], float]] = {}
 replicaset_cache: Dict[str, tuple[List[str], float]] = {}
 
 # Version information
-VERSION = "0.2.5"
+VERSION = "0.3.0"
 
 def get_k8s_client():
     """Initialize and return a Kubernetes client."""
@@ -145,7 +145,16 @@ def get_failed_replicasets(namespace: str) -> List[str]:
 
 def list_pods_for_completion():
     """List pods for zsh completion."""
-    namespace = get_current_namespace()
+    # Get namespace from command line arguments
+    namespace = None
+    for i, arg in enumerate(sys.argv):
+        if arg in ['-n', '--namespace'] and i + 1 < len(sys.argv):
+            namespace = sys.argv[i + 1]
+            break
+    
+    if namespace is None:
+        namespace = get_current_namespace()
+    
     pods = get_pods(namespace)
     failed_rs = get_failed_replicasets(namespace)
     pods.extend(failed_rs)
@@ -183,16 +192,36 @@ def get_user_selection(max_value: int) -> int:
             print("\nExiting gracefully...")
             sys.exit(0)
 
+def get_namespaces() -> List[str]:
+    """Get list of available namespaces."""
+    try:
+        v1 = get_k8s_client()
+        namespaces = v1.list_namespace()
+        return [ns.metadata.name for ns in namespaces.items]
+    except ApiException as e:
+        print(f"Error fetching namespaces: {e}")
+        return []
+
+def list_namespaces_for_completion():
+    """List namespaces for zsh completion."""
+    namespaces = get_namespaces()
+    print(" ".join(namespaces))
+    sys.exit(0)
+
 def main():
     parser = argparse.ArgumentParser(
-        description=f'View Kubernetes events.\n\nTry `{Fore.CYAN}kge -ea{Style.RESET_ALL}` to see all pods with abnormal events',
+        description=f'''View Kubernetes events
+
+Try `{Fore.CYAN}kge -ea{Style.RESET_ALL}` to see all pods with abnormal events
+{Fore.CYAN}source <(kge --completion=zsh){Style.RESET_ALL} to enable zsh completion for pods and namespaces''',
         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('pod', nargs='?', help='Pod name to view events for')
     parser.add_argument('-a', '--all', action='store_true', help='Get events for all pods')
     parser.add_argument('-n', '--namespace', help='Specify namespace to use')
     parser.add_argument('-e', '--exceptions-only', action='store_true', help='Show only non-normal events')
-    parser.add_argument('--complete', action='store_true', help='List pods for shell completion')
-    parser.add_argument('--completion', choices=['zsh'], help='Generate shell completion script')
+    parser.add_argument('--complete-pod', action='store_true', help=argparse.SUPPRESS)
+    parser.add_argument('--complete-ns', action='store_true', help=argparse.SUPPRESS)
+    parser.add_argument('--completion', choices=['zsh'], help=argparse.SUPPRESS)
     parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {VERSION}',
                        help='Show version information and exit')
     args = parser.parse_args()
@@ -205,13 +234,44 @@ def main():
         sys.exit(1)
 
     # Handle completion requests
-    if args.complete:
+    if args.complete_pod:
         list_pods_for_completion()
+    if args.complete_ns:
+        list_namespaces_for_completion()
     if args.completion == 'zsh':
         print("""_kge() {
     local -a pods
-    pods=($(kge --complete))
-    _describe 'pods' pods
+    local -a namespaces
+    namespaces=($(kge --complete-ns))
+
+    _arguments \\
+        '(-n --namespace)'{-n,--namespace}'[Specify namespace to use]:namespace:->namespaces' \\
+        '(-e --exceptions-only)'{-e,--exceptions-only}'[Show only non-normal events]' \\
+        '(-a --all)'{-a,--all}'[Get events for all pods]' \\
+        '(-v --version)'{-v,--version}'[Show version information]' \\
+        '*:pod:->pods'
+
+    case $state in
+        namespaces)
+            _describe 'namespaces' namespaces
+            ;;
+        pods)
+            # Get the namespace from the command line
+            local namespace
+            for ((i=1; i < ${#words}; i++)); do
+                if [[ ${words[i]} == "-n" || ${words[i]} == "--namespace" ]]; then
+                    namespace=${words[i+1]}
+                    break
+                fi
+            done
+            if [[ -n $namespace ]]; then
+                pods=($(kge --complete-pod -n $namespace))
+            else
+                pods=($(kge --complete-pod))
+            fi
+            _describe 'pods' pods
+            ;;
+    esac
 }
 compdef _kge kge""")
         sys.exit(0)
