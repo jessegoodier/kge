@@ -16,7 +16,7 @@ pod_cache: Dict[str, tuple[List[str], float]] = {}
 replicaset_cache: Dict[str, tuple[List[str], float]] = {}
 
 # Version information
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 
 def get_k8s_client():
     """Initialize and return a Kubernetes client."""
