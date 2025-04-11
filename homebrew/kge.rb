@@ -4,7 +4,7 @@ class Kge < Formula
   desc "kubernetes utility for viewing pod and failed replicaset events"
   homepage "https://github.com/jessegoodier/kge"
   url "https://github.com/jessegoodier/kge/raw/refs/heads/main/archive/refs/tags/kge-0.4.0.tar.gz"
-  sha256 "3b9a5179c64edb5456d8d6d2252675df07f042710324bd24846f829dc43e9c94"
+  sha256 "9895e3e88f681cf04454b112bb4cd5c702b4833abb69f2feec4a3bb01900d383"
   license "MIT"
 
   depends_on "python@3.9"
