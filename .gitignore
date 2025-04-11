@@ -174,3 +174,4 @@ cython_debug/
 .pypirc
 gke_gcloud_auth_plugin_cache
 .kubeconfig
+temp/
