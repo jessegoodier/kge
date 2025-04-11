@@ -3,8 +3,8 @@ class kge < Formula
 
   desc "Kubernetes utility for viewing pod and failed replicaset events"
   homepage "https://github.com/jessegoodier/kge"
-  url "https://github.com/jessegoodier/kge/raw/refs/heads/main/archive/refs/tags/kge-0.4.0.tar.gz"
-  sha256 "9895e3e88f681cf04454b112bb4cd5c702b4833abb69f2feec4a3bb01900d383"
+  url "https://github.com/jessegoodier/kge/raw/refs/heads/main/archive/refs/tags/kge-0.4.1.tar.gz"
+  sha256 "0dc2f9c16b5aed58f2a5bdaed7edef337d17e051b8d25c34f0a61bbc3adfc495"
   license "MIT"
 
   depends_on "python@3.9" => :recommended

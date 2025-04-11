@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "kge"
-version = "0.4.0"
-description = "A kubernetes utility for viewing pod events in a user-friendly way"
+name = "kge-kubectl-get-events"
+version = "0.4.1"
+description = "Kubernetes utility for viewing pod and failed replicaset events"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
