@@ -1,9 +1,9 @@
 class Kge < Formula
   include Language::Python::Virtualenv
 
-  desc "A tool to get Kubernetes events"
+  desc "kubernetes utility for viewing pod and failed replicaset events"
   homepage "https://github.com/jessegoodier/kge"
-  url "https://github.com/jessegoodier/kge/raw/refs/heads/main/archive/refs/tags/kge_kubectl_get_events-0.4.0.tar.gz"
+  url "https://github.com/jessegoodier/kge/raw/refs/heads/main/archive/refs/tags/kge-0.4.0.tar.gz"
   sha256 "3b9a5179c64edb5456d8d6d2252675df07f042710324bd24846f829dc43e9c94"
   license "MIT"
 
