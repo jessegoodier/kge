@@ -7,7 +7,7 @@ class Kge < Formula
   sha256 "9895e3e88f681cf04454b112bb4cd5c702b4833abb69f2feec4a3bb01900d383"
   license "MIT"
 
-  depends_on "python@3.9"
+  depends_on "python@3.9" => :recommended
 
   def install
     virtualenv_install_with_resources
