@@ -47,19 +47,19 @@ def get_current_namespace() -> str:
 def get_pods(namespace: str) -> List[str]:
     """Get list of pods in the specified namespace with caching."""
     current_time = time.time()
-    
+
     # Check cache
     if namespace in pod_cache:
         cached_pods, cache_time = pod_cache[namespace]
         if current_time - cache_time < CACHE_DURATION:
             return cached_pods
-    
+
     # Fetch fresh data
     try:
         v1 = get_k8s_client()
         pods = v1.list_namespaced_pod(namespace)
         pod_names = [pod.metadata.name for pod in pods.items]
-        
+
         # Update cache
         pod_cache[namespace] = (pod_names, current_time)
         return pod_names
@@ -100,7 +100,7 @@ def format_events(events) -> str:
     """Format events into a readable string with color."""
     if not events.items:
         return f"{Fore.YELLOW}No events found{Style.RESET_ALL}"
-    
+
     output = []
     for event in events.items:
         # Color based on event type
@@ -117,13 +117,13 @@ def format_events(events) -> str:
 def get_failed_replicasets(namespace: str) -> List[str]:
     """Get list of failed ReplicaSets in the specified namespace with caching."""
     current_time = time.time()
-    
+
     # Check cache
     if namespace in replicaset_cache:
         cached_rs, cache_time = replicaset_cache[namespace]
         if current_time - cache_time < CACHE_DURATION:
             return cached_rs
-    
+
     # Fetch fresh data
     try:
         v1 = get_k8s_apps_client()
@@ -135,7 +135,7 @@ def get_failed_replicasets(namespace: str) -> List[str]:
                     if condition.type == "ReplicaFailure":
                         failed_rs.append(rs.metadata.name)
                         break
-        
+
         # Update cache
         replicaset_cache[namespace] = (failed_rs, current_time)
         return failed_rs
@@ -151,10 +151,10 @@ def list_pods_for_completion():
         if arg in ['-n', '--namespace'] and i + 1 < len(sys.argv):
             namespace = sys.argv[i + 1]
             break
-    
+
     if namespace is None:
         namespace = get_current_namespace()
-    
+
     pods = get_pods(namespace)
     failed_rs = get_failed_replicasets(namespace)
     pods.extend(failed_rs)
@@ -208,6 +208,73 @@ def list_namespaces_for_completion():
     print(" ".join(namespaces))
     sys.exit(0)
 
+def get_all_kinds(namespace: str) -> List[str]:
+    """Get list of all unique kinds from events in the namespace."""
+    try:
+        v1 = get_k8s_client()
+        events = v1.list_namespaced_event(namespace)
+        kinds = set()
+        for event in events.items:
+            if hasattr(event.involved_object, 'kind'):
+                kinds.add(event.involved_object.kind)
+        return sorted(list(kinds))
+    except ApiException as e:
+        print(f"Error fetching kinds: {e}")
+        return []
+
+def list_kinds_for_completion():
+    """List kinds for zsh completion."""
+    # Get namespace from command line arguments
+    namespace = None
+    for i, arg in enumerate(sys.argv):
+        if arg in ['-n', '--namespace'] and i + 1 < len(sys.argv):
+            namespace = sys.argv[i + 1]
+            break
+
+    if namespace is None:
+        namespace = get_current_namespace()
+
+    kinds = get_all_kinds(namespace)
+    print(" ".join(kinds))
+    sys.exit(0)
+
+def get_resources_of_kind(namespace: str, kind: str) -> List[str]:
+    """Get list of resources of a specific kind in the namespace."""
+    try:
+        v1 = get_k8s_client()
+        # Get all events and filter by kind
+        events = v1.list_namespaced_event(namespace)
+        resources = set()
+        for event in events.items:
+            if hasattr(event.involved_object, 'kind') and event.involved_object.kind == kind:
+                resources.add(event.involved_object.name)
+        return sorted(list(resources))
+    except ApiException as e:
+        print(f"Error fetching resources: {e}")
+        return []
+
+def list_resources_for_completion():
+    """List resources for zsh completion."""
+    # Get namespace and kind from command line arguments
+    namespace = None
+    kind = None
+    for i, arg in enumerate(sys.argv):
+        if arg in ['-n', '--namespace'] and i + 1 < len(sys.argv):
+            namespace = sys.argv[i + 1]
+        elif arg in ['-k', '--kinds'] and i + 1 < len(sys.argv):
+            kind = sys.argv[i + 1]
+
+    if namespace is None:
+        namespace = get_current_namespace()
+
+    if kind is None:
+        print("")
+        sys.exit(0)
+
+    resources = get_resources_of_kind(namespace, kind)
+    print(" ".join(resources))
+    sys.exit(0)
+
 def main():
     parser = argparse.ArgumentParser(
         description=f'''View Kubernetes events
@@ -221,7 +288,10 @@ Try `{Fore.CYAN}kge -ea{Style.RESET_ALL}` to see all pods with abnormal events
     parser.add_argument('-e', '--exceptions-only', action='store_true', help='Show only non-normal events')
     parser.add_argument('--complete-pod', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--complete-ns', action='store_true', help=argparse.SUPPRESS)
+    parser.add_argument('--complete-kind', action='store_true', help=argparse.SUPPRESS)
+    parser.add_argument('--complete-resource', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--completion', choices=['zsh'], help=argparse.SUPPRESS)
+    parser.add_argument('-k', '--kinds', help='List all unique kinds from events')
     parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {VERSION}',
                        help='Show version information and exit')
     args = parser.parse_args()
@@ -238,16 +308,24 @@ Try `{Fore.CYAN}kge -ea{Style.RESET_ALL}` to see all pods with abnormal events
         list_pods_for_completion()
     if args.complete_ns:
         list_namespaces_for_completion()
+    if args.complete_kind:
+        list_kinds_for_completion()
+    if args.complete_resource:
+        list_resources_for_completion()
     if args.completion == 'zsh':
         print("""_kge() {
     local -a pods
     local -a namespaces
+    local -a kinds
+    local -a resources
     namespaces=($(kge --complete-ns))
+    kinds=($(kge --complete-kind))
 
     _arguments \\
         '(-n --namespace)'{-n,--namespace}'[Specify namespace to use]:namespace:->namespaces' \\
         '(-e --exceptions-only)'{-e,--exceptions-only}'[Show only non-normal events]' \\
         '(-a --all)'{-a,--all}'[Get events for all pods]' \\
+        '(-k --kinds)'{-k,--kinds}'[List all unique kinds from events]:kind:->kinds' \\
         '(-v --version)'{-v,--version}'[Show version information]' \\
         '*:pod:->pods'
 
@@ -255,7 +333,7 @@ Try `{Fore.CYAN}kge -ea{Style.RESET_ALL}` to see all pods with abnormal events
         namespaces)
             _describe 'namespaces' namespaces
             ;;
-        pods)
+        kinds)
             # Get the namespace from the command line
             local namespace
             for ((i=1; i < ${#words}; i++)); do
@@ -265,11 +343,36 @@ Try `{Fore.CYAN}kge -ea{Style.RESET_ALL}` to see all pods with abnormal events
                 fi
             done
             if [[ -n $namespace ]]; then
+                kinds=($(kge --complete-kind -n $namespace))
+            else
+                kinds=($(kge --complete-kind))
+            fi
+            _describe 'kinds' kinds
+            ;;
+        pods)
+            # Get the namespace and kind from the command line
+            local namespace
+            local kind
+            for ((i=1; i < ${#words}; i++)); do
+                if [[ ${words[i]} == "-n" || ${words[i]} == "--namespace" ]]; then
+                    namespace=${words[i+1]}
+                elif [[ ${words[i]} == "-k" || ${words[i]} == "--kinds" ]]; then
+                    kind=${words[i+1]}
+                fi
+            done
+            if [[ -n $namespace && -n $kind ]]; then
+                resources=($(kge --complete-resource -n $namespace -k $kind))
+                _describe 'resources' resources
+            elif [[ -n $namespace ]]; then
                 pods=($(kge --complete-pod -n $namespace))
+                _describe 'pods' pods
+            elif [[ -n $kind ]]; then
+                resources=($(kge --complete-resource -k $kind))
+                _describe 'resources' resources
             else
                 pods=($(kge --complete-pod))
+                _describe 'pods' pods
             fi
-            _describe 'pods' pods
             ;;
     esac
 }
@@ -280,7 +383,43 @@ compdef _kge kge""")
     namespace = args.namespace if args.namespace else get_current_namespace()
     print(f"{Fore.CYAN}Using namespace: {namespace}{Style.RESET_ALL}")
 
-    # Handle direct pod name argument
+    # Handle -k flag for listing kinds or showing events for a specific resource
+    if args.kinds:
+        # If there's a resource name argument, show events for that specific resource
+        if args.pod:
+            print(f"{Fore.CYAN}Getting events for {args.kinds} {args.pod}{Style.RESET_ALL}")
+            print(f"{Fore.CYAN}{'-' * 40}{Style.RESET_ALL}")
+            try:
+                v1 = get_k8s_client()
+                field_selector = f"involvedObject.name={args.pod},involvedObject.kind={args.kinds}"
+                if args.exceptions_only:
+                    field_selector += ",type!=Normal"
+                events = v1.list_namespaced_event(
+                    namespace,
+                    field_selector=field_selector
+                )
+                print(format_events(events))
+                sys.exit(0)
+            except Exception as e:
+                print(f"{Fore.RED}Error getting events: {e}{Style.RESET_ALL}")
+                sys.exit(1)
+        # Otherwise, just list the kinds
+        else:
+            print(f"{Fore.CYAN}Getting all unique kinds from events{Style.RESET_ALL}")
+            print(f"{Fore.CYAN}{'-' * 40}{Style.RESET_ALL}")
+            try:
+                kinds = get_all_kinds(namespace)
+                if kinds:
+                    for kind in kinds:
+                        print(f"{Fore.GREEN}{kind}{Style.RESET_ALL}")
+                else:
+                    print(f"{Fore.YELLOW}No kinds found in namespace {namespace}{Style.RESET_ALL}")
+                sys.exit(0)
+            except Exception as e:
+                print(f"{Fore.RED}Error getting kinds: {e}{Style.RESET_ALL}")
+                sys.exit(1)
+
+    # Handle direct pod name argument (default case)
     if args.pod:
         print(f"{Fore.CYAN}Getting events for pod: {args.pod}{Style.RESET_ALL}")
         print(f"{Fore.CYAN}{'-' * 40}{Style.RESET_ALL}")
@@ -315,7 +454,7 @@ compdef _kge kge""")
 
     display_menu(pods)
     selection = get_user_selection(len(pods))
-    
+
     if selection == "e":  # Non-normal events for all pods
         print(f"\n{Fore.CYAN}Getting non-normal events for all pods{Style.RESET_ALL}")
         print(f"{Fore.CYAN}{'-' * 40}{Style.RESET_ALL}")
