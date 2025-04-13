@@ -261,7 +261,7 @@ def list_resources_for_completion():
     for i, arg in enumerate(sys.argv):
         if arg in ['-n', '--namespace'] and i + 1 < len(sys.argv):
             namespace = sys.argv[i + 1]
-        elif arg in ['-k', '--kinds'] and i + 1 < len(sys.argv):
+        elif arg in ['-k', '--kind'] and i + 1 < len(sys.argv):
             kind = sys.argv[i + 1]
 
     if namespace is None:
@@ -291,7 +291,7 @@ Try `{Fore.CYAN}kge -ea{Style.RESET_ALL}` to see all pods with abnormal events
     parser.add_argument('--complete-kind', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--complete-resource', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--completion', choices=['zsh'], help=argparse.SUPPRESS)
-    parser.add_argument('-k', '--kinds', help='List all unique kinds from events')
+    parser.add_argument('-k', '--kind', help='List all kinds with events in the namespace')
     parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {VERSION}',
                        help='Show version information and exit')
     args = parser.parse_args()
@@ -325,7 +325,7 @@ Try `{Fore.CYAN}kge -ea{Style.RESET_ALL}` to see all pods with abnormal events
         '(-n --namespace)'{-n,--namespace}'[Specify namespace to use]:namespace:->namespaces' \\
         '(-e --exceptions-only)'{-e,--exceptions-only}'[Show only non-normal events]' \\
         '(-a --all)'{-a,--all}'[Get events for all pods]' \\
-        '(-k --kinds)'{-k,--kinds}'[List all unique kinds from events]:kind:->kinds' \\
+        '(-k --kind)'{-k,--kind}'[List all unique kinds from events]:kind:->kinds' \\
         '(-v --version)'{-v,--version}'[Show version information]' \\
         '*:pod:->pods'
 
@@ -356,7 +356,7 @@ Try `{Fore.CYAN}kge -ea{Style.RESET_ALL}` to see all pods with abnormal events
             for ((i=1; i < ${#words}; i++)); do
                 if [[ ${words[i]} == "-n" || ${words[i]} == "--namespace" ]]; then
                     namespace=${words[i+1]}
-                elif [[ ${words[i]} == "-k" || ${words[i]} == "--kinds" ]]; then
+                elif [[ ${words[i]} == "-k" || ${words[i]} == "--kind" ]]; then
                     kind=${words[i+1]}
                 fi
             done
@@ -384,14 +384,14 @@ compdef _kge kge""")
     print(f"{Fore.CYAN}Using namespace: {namespace}{Style.RESET_ALL}")
 
     # Handle -k flag for listing kinds or showing events for a specific resource
-    if args.kinds:
+    if args.kind:
         # If there's a resource name argument, show events for that specific resource
         if args.pod:
-            print(f"{Fore.CYAN}Getting events for {args.kinds} {args.pod}{Style.RESET_ALL}")
+            print(f"{Fore.CYAN}Getting events for {args.kind} {args.pod}{Style.RESET_ALL}")
             print(f"{Fore.CYAN}{'-' * 40}{Style.RESET_ALL}")
             try:
                 v1 = get_k8s_client()
-                field_selector = f"involvedObject.name={args.pod},involvedObject.kind={args.kinds}"
+                field_selector = f"involvedObject.name={args.pod},involvedObject.kind={args.kind}"
                 if args.exceptions_only:
                     field_selector += ",type!=Normal"
                 events = v1.list_namespaced_event(
