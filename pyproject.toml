@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "kge-kubectl-get-events"
-version = "0.5.0"
+version = "0.5.1"
 description = "Kubernetes utility for viewing pod and failed replicaset events"
 readme = "README.md"
 requires-python = ">=3.11"

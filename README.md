@@ -8,17 +8,19 @@ A simple yet powerful CLI tool for viewing and monitoring Kubernetes events with
 
 ## Table of Contents
 
-- [Features](#features)
-- [Prerequisites](#prerequisites)
-- [Installation](#installation)
-- [Usage](#usage)
-  - [Basic Usage](#basic-usage)
-  - [Resource Type Events](#viewing-events-for-any-resource-type)
-  - [Interactive Mode](#interactive-mode)
-  - [Shell Completion](#shell-completion)
-- [Examples](#examples)
-- [Contributing](#contributing)
-- [License](#license)
+- [kge - Kubernetes Events Viewer](#kge---kubernetes-events-viewer)
+  - [Table of Contents](#table-of-contents)
+  - [Features](#features)
+  - [Installation](#installation)
+  - [Usage](#usage)
+    - [Basic Usage](#basic-usage)
+    - [Viewing Events for Any Resource Type](#viewing-events-for-any-resource-type)
+    - [Interactive Mode](#interactive-mode)
+    - [Shell Completion](#shell-completion)
+  - [Examples](#examples)
+  - [Known Issues](#known-issues)
+  - [Contributing](#contributing)
+  - [License](#license)
 
 ## Features
 
@@ -114,6 +116,7 @@ source <(kge --completion=zsh)
 ```
 
 Completion features:
+
 - Tab completion for namespaces after `-n`
 - Tab completion for pods after `-n <namespace>`
 - Tab completion for kinds after `-k`
