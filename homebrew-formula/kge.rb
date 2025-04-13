@@ -3,7 +3,7 @@ class Kge < Formula
 
   desc "Kubernetes utility for viewing pod and failed replicaset events"
   homepage "https://github.com/jessegoodier/kge-kubectl-get-events"
-  url "https://github.com/jessegoodier/kge-kubectl-get-events/archive/refs/tags/v0.5.1.tar.gz"
+  url "https://github.com/jessegoodier/kge-kubectl-get-events/archive/refs/tags/v0.5.3.tar.gz"
   sha256 "" # You'll need to add the SHA256 of your release tarball
   license "MIT"
 
