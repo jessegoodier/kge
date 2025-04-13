@@ -16,7 +16,7 @@ pod_cache: Dict[str, tuple[List[str], float]] = {}
 replicaset_cache: Dict[str, tuple[List[str], float]] = {}
 
 # Version information
-VERSION = "0.4.1"
+VERSION = "0.5.0"
 
 def get_k8s_client():
     """Initialize and return a Kubernetes client."""
@@ -64,7 +64,11 @@ def get_pods(namespace: str) -> List[str]:
         pod_cache[namespace] = (pod_names, current_time)
         return pod_names
     except ApiException as e:
-        print(f"Error fetching pods: {e}")
+        if e.status == 401:
+            print(f"{Fore.RED}Error: Unauthorized access to Kubernetes cluster{Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}Please ensure you have valid credentials and proper access to the namespace '{namespace}'{Style.RESET_ALL}")
+        else:
+            print(f"{Fore.RED}Error fetching pods: {e}{Style.RESET_ALL}")
         sys.exit(1)
 
 def get_events_for_pod(namespace: str, pod: str, non_normal: bool = False) -> str:
