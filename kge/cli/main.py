@@ -282,12 +282,12 @@ def list_resources_for_completion():
 def main():
     parser = argparse.ArgumentParser(
         description=f'''View Kubernetes events
-
-Try `{Fore.CYAN}kge -ea{Style.RESET_ALL}` to see all pods with abnormal events
+Suggested usage:
+{Fore.CYAN}kge -ea{Style.RESET_ALL} to see all abnormal events in the namespace add {Fore.CYAN}-n{Style.RESET_ALL} to specify a different namespace
 {Fore.CYAN}source <(kge --completion=zsh){Style.RESET_ALL} to enable zsh completion for pods and namespaces''',
         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('pod', nargs='?', help='Pod name to view events for')
-    parser.add_argument('-a', '--all', action='store_true', help='Get events for all pods')
+    parser.add_argument('-a', '--all', action='store_true', help='Get all events in the namespace')
     parser.add_argument('-n', '--namespace', help='Specify namespace to use')
     parser.add_argument('-e', '--exceptions-only', action='store_true', help='Show only non-normal events')
     parser.add_argument('--complete-pod', action='store_true', help=argparse.SUPPRESS)
