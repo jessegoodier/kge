@@ -16,7 +16,7 @@ pod_cache: Dict[str, tuple[List[str], float]] = {}
 replicaset_cache: Dict[str, tuple[List[str], float]] = {}
 
 # Version information
-VERSION = "0.5.3"
+VERSION = "0.5.4"
 
 def get_k8s_client():
     """Initialize and return a Kubernetes client."""
@@ -119,15 +119,15 @@ def format_events(events) -> str:
     return "\n".join(output)
 
 def get_failed_replicasets(namespace: str) -> List[str]:
-    """Get list of failed ReplicaSets in the specified namespace with caching."""
+    """Get list of failed ReplicaSets in the given namespace"""
     current_time = time.time()
-
-    # Check cache
+    
+    # Check cache first
     if namespace in replicaset_cache:
         cached_rs, cache_time = replicaset_cache[namespace]
         if current_time - cache_time < CACHE_DURATION:
             return cached_rs
-
+    
     # Fetch fresh data
     try:
         v1 = get_k8s_apps_client()
@@ -143,7 +143,7 @@ def get_failed_replicasets(namespace: str) -> List[str]:
         # Update cache
         replicaset_cache[namespace] = (failed_rs, current_time)
         return failed_rs
-    except ApiException as e:
+    except Exception as e:
         print(f"Error fetching ReplicaSets: {e}")
         return []
 

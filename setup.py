@@ -8,7 +8,7 @@ completion_files = [os.path.join('completion', f) for f in os.listdir(completion
 
 setup(
     name="kge-kubectl-get-events",
-    version="0.5.3",
+    version="0.5.4",
     description="Kubernetes utility for viewing pod and failed replicaset events",
     author="Jesse Goodier",
     author_email="31039225+jessegoodier@users.noreply.github.com",
