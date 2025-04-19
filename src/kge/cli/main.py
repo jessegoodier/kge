@@ -1,5 +1,3 @@
-"""Main module."""
-
 import sys
 import time
 import argparse
@@ -8,8 +6,19 @@ from functools import lru_cache
 from kubernetes import client, config
 from kubernetes.client import ApiException
 from colorama import init, Fore, Style
-from .. import __version__
-from ..completion import install_completion
+import os
+import re
+
+from kge.completion import install_completion
+
+def get_version():
+    """Get version from pyproject.toml"""
+    with open("pyproject.toml", "r") as f:
+        content = f.read()
+        match = re.search(r'version\s*=\s*"([^"]+)"', content)
+        if match:
+            return match.group(1)
+        return "0.0.0"
 
 # Initialize colorama
 init()
@@ -19,6 +28,8 @@ CACHE_DURATION = 10
 pod_cache: Dict[str, tuple[List[str], float]] = {}
 replicaset_cache: Dict[str, tuple[List[str], float]] = {}
 
+# Version information
+VERSION = get_version()
 
 def get_k8s_client():
     """Initialize and return a Kubernetes client."""
@@ -28,7 +39,6 @@ def get_k8s_client():
     except Exception as e:
         print(f"Error initializing Kubernetes client: {e}")
         sys.exit(1)
-
 
 def get_k8s_apps_client():
     """Initialize and return a Kubernetes AppsV1Api client."""
@@ -82,7 +92,6 @@ def get_pods(namespace: str) -> List[str]:
             print(f"{Fore.RED}Error fetching pods: {e}{Style.RESET_ALL}")
         sys.exit(1)
 
-
 def get_events_for_pod(namespace: str, pod: str, non_normal: bool = False) -> str:
     """Get events for a specific pod."""
     try:
@@ -90,12 +99,14 @@ def get_events_for_pod(namespace: str, pod: str, non_normal: bool = False) -> st
         field_selector = f"involvedObject.name={pod}"
         if non_normal:
             field_selector += ",type!=Normal"
-        events = v1.list_namespaced_event(namespace, field_selector=field_selector)
+        events = v1.list_namespaced_event(
+            namespace,
+            field_selector=field_selector
+        )
         return format_events(events)
     except ApiException as e:
         print(f"Error fetching events: {e}")
         sys.exit(1)
-
 
 def get_all_events(namespace: str, non_normal: bool = False) -> str:
     """Get all events in the namespace."""
@@ -109,7 +120,6 @@ def get_all_events(namespace: str, non_normal: bool = False) -> str:
     except ApiException as e:
         print(f"Error fetching events: {e}")
         sys.exit(1)
-
 
 def format_events(events) -> str:
     """Format events into a readable string with color."""
@@ -129,17 +139,16 @@ def format_events(events) -> str:
         )
     return "\n".join(output)
 
-
 def get_failed_replicasets(namespace: str) -> List[str]:
     """Get list of failed ReplicaSets in the given namespace"""
     current_time = time.time()
-
+    
     # Check cache first
     if namespace in replicaset_cache:
         cached_rs, cache_time = replicaset_cache[namespace]
         if current_time - cache_time < CACHE_DURATION:
             return cached_rs
-
+    
     # Fetch fresh data
     try:
         v1 = get_k8s_apps_client()
@@ -159,7 +168,6 @@ def get_failed_replicasets(namespace: str) -> List[str]:
         print(f"Error fetching ReplicaSets: {e}")
         return []
 
-
 def list_pods_for_completion():
     """List pods for zsh completion."""
     # Get namespace from command line arguments
@@ -178,7 +186,6 @@ def list_pods_for_completion():
     print(" ".join(pods))
     sys.exit(0)
 
-
 def display_menu(pods: List[str]) -> None:
     """Display numbered menu of pods with color."""
     print(f"{Fore.CYAN}Select a pod:{Style.RESET_ALL}")
@@ -187,7 +194,6 @@ def display_menu(pods: List[str]) -> None:
     for i, pod in enumerate(pods, 1):
         print(f"{Fore.GREEN}{i:3d}{Style.RESET_ALL}) {pod}")
     print(f"  {Fore.GREEN}q{Style.RESET_ALL}) Quit")
-
 
 def get_user_selection(max_value: int) -> int:
     """Get and validate user selection."""
@@ -213,7 +219,6 @@ def get_user_selection(max_value: int) -> int:
             print("\nExiting gracefully...")
             sys.exit(0)
 
-
 def get_namespaces() -> List[str]:
     """Get list of available namespaces."""
     try:
@@ -224,13 +229,11 @@ def get_namespaces() -> List[str]:
         print(f"Error fetching namespaces: {e}")
         return []
 
-
 def list_namespaces_for_completion():
     """List namespaces for zsh completion."""
     namespaces = get_namespaces()
     print(" ".join(namespaces))
     sys.exit(0)
-
 
 def get_all_kinds(namespace: str) -> List[str]:
     """Get list of all unique kinds from events in the namespace."""
@@ -239,13 +242,12 @@ def get_all_kinds(namespace: str) -> List[str]:
         events = v1.list_namespaced_event(namespace)
         kinds = set()
         for event in events.items:
-            if hasattr(event.involved_object, "kind"):
+            if hasattr(event.involved_object, 'kind'):
                 kinds.add(event.involved_object.kind)
         return sorted(list(kinds))
     except ApiException as e:
         print(f"Error fetching kinds: {e}")
         return []
-
 
 def list_kinds_for_completion():
     """List kinds for zsh completion."""
@@ -262,7 +264,6 @@ def list_kinds_for_completion():
     kinds = get_all_kinds(namespace)
     print(" ".join(kinds))
     sys.exit(0)
-
 
 def get_resources_of_kind(namespace: str, kind: str) -> List[str]:
     """Get list of resources of a specific kind in the namespace."""
@@ -281,7 +282,6 @@ def get_resources_of_kind(namespace: str, kind: str) -> List[str]:
     except ApiException as e:
         print(f"Error fetching resources: {e}")
         return []
-
 
 def list_resources_for_completion():
     """List resources for zsh completion."""
@@ -305,10 +305,14 @@ def list_resources_for_completion():
     print(" ".join(resources))
     sys.exit(0)
 
-
 def main():
     """Main entry point for the CLI."""
-    parser = argparse.ArgumentParser(description="Kubernetes Get Events")
+    parser = argparse.ArgumentParser(
+        description=f'''View Kubernetes events
+Suggested usage:
+{Fore.CYAN}kge -ea{Style.RESET_ALL} to see all abnormal events in the namespace add {Fore.CYAN}-n{Style.RESET_ALL} to specify a different namespace
+{Fore.CYAN}source <(kge --completion=zsh){Style.RESET_ALL} to enable zsh completion for pods and namespaces''',
+        formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("pod", nargs="?", help="Pod name to get events for")
     parser.add_argument("-n", "--namespace", help="Namespace to use")
     parser.add_argument(
@@ -321,34 +325,45 @@ def main():
         "-a", "--all", action="store_true", help="Get events for all pods"
     )
     parser.add_argument("-k", "--kind", help="List all unique kinds from events")
+    parser.add_argument('--completion', choices=['zsh'], help="Output shell completion script")
+    parser.add_argument(
+        "--install-completion", action="store_true", help="Install shell completion"
+    )
     parser.add_argument(
         "-v", "--version", action="store_true", help="Show version information"
     )
     parser.add_argument(
-        "--complete-ns", action="store_true", help="List namespaces for completion"
+        "--complete-ns", action="store_true", help=argparse.SUPPRESS
     )
     parser.add_argument(
-        "--complete-kind", action="store_true", help="List kinds for completion"
+        "--complete-kind", action="store_true", help=argparse.SUPPRESS
     )
     parser.add_argument(
-        "--complete-pod", action="store_true", help="List pods for completion"
+        "--complete-pod", action="store_true", help=argparse.SUPPRESS
     )
     parser.add_argument(
-        "--complete-resource", action="store_true", help="List resources for completion"
-    )
-    parser.add_argument(
-        "--install-completion", action="store_true", help="Install shell completion"
+        "--complete-resource", action="store_true", help=argparse.SUPPRESS
     )
 
     args = parser.parse_args()
 
     if args.version:
-        print(f"kge version {__version__}")
+        print(f"kge version {VERSION}")
         sys.exit(0)
 
     if args.install_completion:
         install_completion()
         sys.exit(0)
+
+    if args.completion:
+        try:
+            completion_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'completion', '_kge')
+            with open(completion_file, 'r') as f:
+                print(f.read())
+            sys.exit(0)
+        except Exception as e:
+            print(f"{Fore.RED}Error reading completion file: {e}{Style.RESET_ALL}")
+            sys.exit(1)
 
     # Check if we can connect to Kubernetes
     try:
@@ -473,7 +488,6 @@ def main():
             print(events)
         except Exception as e:
             print(f"{Fore.RED}Error getting events: {e}{Style.RESET_ALL}")
-
 
 if __name__ == "__main__":
     try:
