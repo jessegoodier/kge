@@ -8,12 +8,12 @@ _kge() {
     namespaces=($(kge --complete-ns))
     kinds=($(kge --complete-kind))
 
-    _arguments \\
-        '(-n --namespace)'{-n,--namespace}'[Specify namespace to use]:namespace:->namespaces' \\
-        '(-e --exceptions-only)'{-e,--exceptions-only}'[Show only non-normal events]' \\
-        '(-a --all)'{-a,--all}'[Get events for all pods]' \\
-        '(-k --kind)'{-k,--kind}'[List all unique kinds from events]:kind:->kinds' \\
-        '(-v --version)'{-v,--version}'[Show version information]' \\
+    _arguments \
+        '(-n --namespace)'{-n,--namespace}'[Specify namespace to use]:namespace:->namespaces' \
+        '(-e --exceptions-only)'{-e,--exceptions-only}'[Show only non-normal events]' \
+        '(-a --all)'{-a,--all}'[Get events for all pods]' \
+        '(-k --kind)'{-k,--kind}'[List all unique kinds from events]:kind:->kinds' \
+        '(-v --version)'{-v,--version}'[Show version information]' \
         '*:pod:->pods'
 
     case $state in
@@ -64,4 +64,4 @@ _kge() {
     esac
 }
 
-compdef _kge kge 
+compdef _kge kge
