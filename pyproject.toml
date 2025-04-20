@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "kge-kubectl-get-events"
-version = "0.7.6"
+version = "0.7.7"
 description = "Kubernetes utility for viewing pod and failed replicaset events"
 authors = ["Jesse Goodier <31039225+jessegoodier@users.noreply.github.com>"]
 readme = "README.md"
