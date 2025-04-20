@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "kge-kubectl-get-events"
-version = "0.7.0"
+version = "0.7.4"
 description = "Kubernetes utility for viewing pod and failed replicaset events"
 authors = ["Jesse Goodier <31039225+jessegoodier@users.noreply.github.com>"]
 readme = "README.md"
@@ -18,12 +18,14 @@ classifiers = [
 ]
 
 [tool.poetry.dependencies]
-python = ">=3.11"
+python = ">=3.12"
 colorama = ">=0.4.6,<0.5.0"
 kubernetes = ">=32.0.1,<33.0.0"
+# cffi = "^1.17.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.5"
+toml = "^0.10.2"
 
 [tool.poetry.scripts]
 kge = "kge.cli.main:main"

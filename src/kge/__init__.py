@@ -1,5 +1,3 @@
 """KGE - Kubernetes Get Events package."""
 
-from importlib.metadata import version
-
-__version__ = version("kge-kubectl-get-events")
+__version__ = "0.7.4"

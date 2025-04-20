@@ -450,6 +450,17 @@ files = [
 ]
 
 [[package]]
+name = "toml"
+version = "0.10.2"
+description = "Python Library for Tom's Obvious, Minimal Language"
+optional = false
+python-versions = ">=2.6, !=3.0.*, !=3.1.*, !=3.2.*"
+files = [
+    {file = "toml-0.10.2-py2.py3-none-any.whl", hash = "sha256:806143ae5bfb6a3c6e736a764057db0e6a0e05e338b5630894a5f779cabb4f9b"},
+    {file = "toml-0.10.2.tar.gz", hash = "sha256:b3bda1d108d5dd99f4a20d24d9c348e91c4db7ab1b749200bded2f839ccbe68f"},
+]
+
+[[package]]
 name = "urllib3"
 version = "2.4.0"
 description = "HTTP library with thread-safe connection pooling, file post, and more."
@@ -484,5 +495,5 @@ test = ["websockets"]
 
 [metadata]
 lock-version = "2.0"
-python-versions = ">=3.11"
-content-hash = "66ec58d788e19311d892b7895ed6b07346eb7087e345ed0bb16831f0d60918cd"
+python-versions = ">=3.12"
+content-hash = "473b0795fc388d77ad2d734c4c6b1fb196c9f9e717b0c3dce75c6d637be68642"

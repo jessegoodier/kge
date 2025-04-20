@@ -7,18 +7,14 @@ from kubernetes import client, config
 from kubernetes.client import ApiException
 from colorama import init, Fore, Style
 import os
-import re
 
 from kge.completion import install_completion
 
 def get_version():
-    """Get version from pyproject.toml"""
-    with open("pyproject.toml", "r") as f:
-        content = f.read()
-        match = re.search(r'version\s*=\s*"([^"]+)"', content)
-        if match:
-            return match.group(1)
-        return "0.0.0"
+    """Get the version from the package."""
+    from kge import __version__
+    return __version__
+    
 
 # Initialize colorama
 init()

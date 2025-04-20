@@ -107,3 +107,4 @@ ENV/
 temp/
 .kubeconfig
 gke_gcloud_auth_plugin_cache
+homebrew-kge/Formula/kge.rb
