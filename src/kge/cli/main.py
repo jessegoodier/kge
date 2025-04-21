@@ -4,7 +4,6 @@ import argparse
 from typing import List, Dict
 from functools import lru_cache
 from kubernetes import client, config
-from kubernetes.client import ApiException
 from colorama import init, Fore, Style
 import os
 
@@ -76,7 +75,7 @@ def get_pods(namespace: str) -> List[str]:
         # Update cache
         pod_cache[namespace] = (pod_names, current_time)
         return pod_names
-    except ApiException as e:
+    except client.ApiException as e:
         if e.status == 401:
             print(
                 f"{Fore.RED}Error: Unauthorized access to Kubernetes cluster{Style.RESET_ALL}"
@@ -100,7 +99,7 @@ def get_events_for_pod(namespace: str, pod: str, non_normal: bool = False) -> st
             field_selector=field_selector
         )
         return format_events(events)
-    except ApiException as e:
+    except client.ApiException as e:
         print(f"Error fetching events: {e}")
         sys.exit(1)
 
@@ -113,7 +112,7 @@ def get_all_events(namespace: str, non_normal: bool = False) -> str:
             field_selector = "type!=Normal"
         events = v1.list_namespaced_event(namespace, field_selector=field_selector)
         return format_events(events)
-    except ApiException as e:
+    except client.ApiException as e:
         print(f"Error fetching events: {e}")
         sys.exit(1)
 
@@ -221,7 +220,7 @@ def get_namespaces() -> List[str]:
         v1 = get_k8s_client()
         namespaces = v1.list_namespace()
         return [ns.metadata.name for ns in namespaces.items]
-    except ApiException as e:
+    except client.ApiException as e:
         print(f"Error fetching namespaces: {e}")
         return []
 
@@ -241,7 +240,7 @@ def get_all_kinds(namespace: str) -> List[str]:
             if hasattr(event.involved_object, 'kind'):
                 kinds.add(event.involved_object.kind)
         return sorted(list(kinds))
-    except ApiException as e:
+    except client.ApiException as e:
         print(f"Error fetching kinds: {e}")
         return []
 
@@ -275,7 +274,7 @@ def get_resources_of_kind(namespace: str, kind: str) -> List[str]:
             ):
                 resources.add(event.involved_object.name)
         return sorted(list(resources))
-    except ApiException as e:
+    except client.ApiException as e:
         print(f"Error fetching resources: {e}")
         return []
 

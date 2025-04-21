@@ -163,7 +163,7 @@
         },
         "kge-kubectl-get-events": {
             "file": ".",
-            "markers": "python_version >= '3.11'"
+            "markers": "python_version >= '3.13'"
         },
         "kubernetes": {
             "hashes": [

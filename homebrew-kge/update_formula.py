@@ -3,9 +3,7 @@
 Update the Homebrew formula for kge-kubectl-get-events to the latest version.
 """
 
-import os
 import sys
-import json
 import requests
 import re
 import subprocess
