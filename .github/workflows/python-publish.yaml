@@ -3,8 +3,9 @@
 name: Publish Python Package
 
 on:
-  release:
-    types: [created]
+  push:
+    tags:
+      - "v*.*.*"  # Triggers on version tags like v1.2.3
 
 jobs:
   test:
@@ -20,7 +21,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-          cache: 'poetry'
           
       - name: Install Poetry
         run: |
@@ -55,6 +55,7 @@ jobs:
       url: https://pypi.org/p/kge-kubectl-get-events
     permissions:
       id-token: write  # IMPORTANT: this permission is mandatory for trusted publishing
+
     steps:
       - uses: actions/checkout@v4
       
