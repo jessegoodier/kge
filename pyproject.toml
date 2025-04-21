@@ -2,7 +2,8 @@
 name = "kge-kubectl-get-events"
 version = "0.7.9"
 description = "Kubernetes utility for viewing pod and failed replicaset events"
-authors = ["Jesse Goodier <31039225+jessegoodier@users.noreply.github.com>"]
+authors = [ "Jesse Goodier" ]
+homepage = "https://github.com/jessegoodier/kge"
 readme = "README.md"
 license = "MIT"
 packages = [{include = "kge", from = "src"}]
@@ -14,6 +15,7 @@ classifiers = [
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3.13",
 ]
+keywords = ["kubernetes", "troubleshooting", "kubectl", "events", "pod", "replicaset", "failed", "replicaset", "event"]
 
 [tool.poetry.dependencies]
 python = ">=3.13"
@@ -23,6 +25,7 @@ kubernetes = ">=32.0.1,<33.0.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.5"
+pytest-cov = "^4.1.0"
 toml = "^0.10.2"
 
 [tool.poetry.scripts]
