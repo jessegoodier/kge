@@ -4,7 +4,8 @@ import argparse
 from typing import List, Dict
 from functools import lru_cache
 from kubernetes import client, config
-from colorama import init, Fore, Style
+from rich.console import Console
+from rich.style import Style
 import os
 
 from kge.completion import install_completion
@@ -15,8 +16,8 @@ def get_version():
     return __version__
     
 
-# Initialize colorama
-init()
+# Initialize rich console
+console = Console()
 
 # Cache duration for pods and replicasets
 CACHE_DURATION = 10
@@ -33,15 +34,15 @@ def get_k8s_client():
         return client.CoreV1Api()
     except Exception as e:
         if "MaxRetryError" in str(e):
-            print(f"{Fore.RED}Error: Unable to connect to Kubernetes cluster{Style.RESET_ALL}")
-            print(f"{Fore.YELLOW}Please ensure that:{Style.RESET_ALL}")
-            print(f"  1. Your Kubernetes cluster is running")
-            print(f"  2. You have valid kubeconfig credentials")
-            print(f"  3. The cluster is accessible from your network")
-            print(f"  4. The API server is responding")
-            print(f"\nDetailed error: {e}")
+            console.print("[red]Error: Unable to connect to Kubernetes cluster[/red]")
+            console.print("[yellow]Please ensure that:[/yellow]")
+            console.print("  1. Your Kubernetes cluster is running")
+            console.print("  2. You have valid kubeconfig credentials")
+            console.print("  3. The cluster is accessible from your network")
+            console.print("  4. The API server is responding")
+            console.print(f"\nDetailed error: {e}")
         else:
-            print(f"{Fore.RED}Error initializing Kubernetes client: {e}{Style.RESET_ALL}")
+            console.print(f"[red]Error initializing Kubernetes client: {e}[/red]")
         sys.exit(1)
 
 def get_k8s_apps_client():
@@ -50,7 +51,7 @@ def get_k8s_apps_client():
         config.load_kube_config()
         return client.AppsV1Api()
     except Exception as e:
-        print(f"Error initializing Kubernetes Apps client: {e}")
+        console.print(f"Error initializing Kubernetes Apps client: {e}")
         sys.exit(1)
 
 
@@ -86,14 +87,10 @@ def get_pods(namespace: str) -> List[str]:
         return pod_names
     except client.ApiException as e:
         if e.status == 401:
-            print(
-                f"{Fore.RED}Error: Unauthorized access to Kubernetes cluster{Style.RESET_ALL}"
-            )
-            print(
-                f"{Fore.YELLOW}Please ensure you have valid credentials and proper access to the namespace '{namespace}'{Style.RESET_ALL}"
-            )
+            console.print("[red]Error: Unauthorized access to Kubernetes cluster[/red]")
+            console.print(f"[yellow]Please ensure you have valid credentials and proper access to the namespace '{namespace}'[/yellow]")
         else:
-            print(f"{Fore.RED}Error fetching pods: {e}{Style.RESET_ALL}")
+            console.print(f"[red]Error fetching pods: {e}[/red]")
         sys.exit(1)
 
 def get_events_for_pod(namespace: str, pod: str, non_normal: bool = False) -> str:
@@ -109,7 +106,7 @@ def get_events_for_pod(namespace: str, pod: str, non_normal: bool = False) -> st
         )
         return format_events(events)
     except client.ApiException as e:
-        print(f"Error fetching events: {e}")
+        console.print(f"Error fetching events: {e}")
         sys.exit(1)
 
 def get_all_events(namespace: str, non_normal: bool = False) -> str:
@@ -122,23 +119,23 @@ def get_all_events(namespace: str, non_normal: bool = False) -> str:
         events = v1.list_namespaced_event(namespace, field_selector=field_selector)
         return format_events(events)
     except client.ApiException as e:
-        print(f"Error fetching events: {e}")
+        console.print(f"Error fetching events: {e}")
         sys.exit(1)
 
 def format_events(events) -> str:
     """Format events into a readable string with color."""
     if not events.items:
-        return f"{Fore.YELLOW}No events found{Style.RESET_ALL}"
+        return "[yellow]No events found[/yellow]"
 
     output = []
     for event in events.items:
         # Color based on event type
-        color = Fore.GREEN if event.type == "Normal" else Fore.RED
+        color = "green" if event.type == "Normal" else "red"
         output.append(
-            f"{Fore.CYAN}{event.last_timestamp}{Style.RESET_ALL} "
-            f"{color}{event.type}{Style.RESET_ALL} "
-            f"{Style.RESET_ALL}{event.involved_object.name} "
-            f"{Fore.YELLOW}{event.reason}{Style.RESET_ALL}: "
+            f"[cyan]{event.last_timestamp}[/cyan] "
+            f"[{color}]{event.type}[/{color}] "
+            f"{event.involved_object.name} "
+            f"[yellow]{event.reason}[/yellow]: "
             f"{event.message}"
         )
     return "\n".join(output)
@@ -169,7 +166,7 @@ def get_failed_replicasets(namespace: str) -> List[str]:
         replicaset_cache[namespace] = (failed_rs, current_time)
         return failed_rs
     except Exception as e:
-        print(f"Error fetching ReplicaSets: {e}")
+        console.print(f"Error fetching ReplicaSets: {e}")
         return []
 
 def list_pods_for_completion():
@@ -192,12 +189,12 @@ def list_pods_for_completion():
 
 def display_menu(pods: List[str]) -> None:
     """Display numbered menu of pods with color."""
-    print(f"{Fore.CYAN}Select a pod:{Style.RESET_ALL}")
-    print(f"  {Fore.GREEN}e{Style.RESET_ALL}) Abnormal events for all pods")
-    print(f"  {Fore.GREEN}a{Style.RESET_ALL}) All pods, all events")
+    console.print("[cyan]Select a pod:[/cyan]")
+    console.print("  [green]e[/green]) Abnormal events for all pods")
+    console.print("  [green]a[/green]) All pods, all events")
     for i, pod in enumerate(pods, 1):
-        print(f"{Fore.GREEN}{i:3d}{Style.RESET_ALL}) {pod}")
-    print(f"  {Fore.GREEN}q{Style.RESET_ALL}) Quit")
+        console.print(f"[green]{i:3d}[/green]) {pod}")
+    console.print("  [green]q[/green]) Quit")
 
 def get_user_selection(max_value: int) -> int:
     """Get and validate user selection."""
@@ -205,7 +202,7 @@ def get_user_selection(max_value: int) -> int:
         try:
             selection = input(f"Enter selection: ")
             if selection.lower() == "q":
-                print("\nExiting gracefully...")
+                console.print("\nExiting gracefully...")
                 sys.exit(0)
             if selection == "a":
                 return "a"
@@ -214,13 +211,13 @@ def get_user_selection(max_value: int) -> int:
             selection = int(selection)
             if 1 <= selection <= max_value:
                 return selection
-            print(
+            console.print(
                 f"Invalid selection. Please enter a number between 1 and {max_value} or q to quit"
             )
         except ValueError:
-            print("Please enter a valid number, a, e or q to quit")
+            console.print("Please enter a valid number, a, e or q to quit")
         except KeyboardInterrupt:
-            print("\nExiting gracefully...")
+            console.print("\nExiting gracefully...")
             sys.exit(0)
 
 def get_namespaces() -> List[str]:
@@ -230,7 +227,7 @@ def get_namespaces() -> List[str]:
         namespaces = v1.list_namespace()
         return [ns.metadata.name for ns in namespaces.items]
     except client.ApiException as e:
-        print(f"Error fetching namespaces: {e}")
+        console.print(f"Error fetching namespaces: {e}")
         return []
 
 def list_namespaces_for_completion():
@@ -250,7 +247,7 @@ def get_all_kinds(namespace: str) -> List[str]:
                 kinds.add(event.involved_object.kind)
         return sorted(list(kinds))
     except client.ApiException as e:
-        print(f"Error fetching kinds: {e}")
+        console.print(f"Error fetching kinds: {e}")
         return []
 
 def list_kinds_for_completion():
@@ -284,7 +281,7 @@ def get_resources_of_kind(namespace: str, kind: str) -> List[str]:
                 resources.add(event.involved_object.name)
         return sorted(list(resources))
     except client.ApiException as e:
-        print(f"Error fetching resources: {e}")
+        console.print(f"Error fetching resources: {e}")
         return []
 
 def list_resources_for_completion():
@@ -314,8 +311,8 @@ def main():
     parser = argparse.ArgumentParser(
         description=f'''View Kubernetes events
 Suggested usage:
-{Fore.CYAN}kge -ea{Style.RESET_ALL} to see all abnormal events in the namespace add {Fore.CYAN}-n{Style.RESET_ALL} to specify a different namespace
-{Fore.CYAN}source <(kge --completion=zsh){Style.RESET_ALL} to enable zsh completion for pods and namespaces''',
+[cyan]kge -ea[/cyan] to see all abnormal events in the namespace add [cyan]-n[/cyan] to specify a different namespace
+[cyan]source <(kge --completion=zsh)[/cyan] to enable zsh completion for pods and namespaces''',
         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("pod", nargs="?", help="Pod name to get events for")
     parser.add_argument("-n", "--namespace", help="Namespace to use")
@@ -352,7 +349,7 @@ Suggested usage:
     args = parser.parse_args()
 
     if args.version:
-        print(f"kge version {VERSION}")
+        console.print(f"kge version {VERSION}")
         sys.exit(0)
 
     if args.install_completion:
@@ -366,14 +363,14 @@ Suggested usage:
                 print(f.read())
             sys.exit(0)
         except Exception as e:
-            print(f"{Fore.RED}Error reading completion file: {e}{Style.RESET_ALL}")
+            console.print(f"[red]Error reading completion file: {e}[/red]")
             sys.exit(1)
 
     # Check if we can connect to Kubernetes
     try:
         get_k8s_client()
     except Exception as e:
-        print(f"{Fore.RED}Error connecting to Kubernetes: {e}{Style.RESET_ALL}")
+        console.print(f"[red]Error connecting to Kubernetes: {e}[/red]")
         sys.exit(1)
 
     # Handle completion requests
@@ -388,16 +385,16 @@ Suggested usage:
 
     # Get namespace (use specified or current)
     namespace = args.namespace if args.namespace else get_current_namespace()
-    print(f"{Fore.CYAN}Using namespace: {namespace}{Style.RESET_ALL}")
+    console.print(f"[cyan]Using namespace: {namespace}[/cyan]")
 
     # Handle -k flag for listing kinds or showing events for a specific resource
     if args.kind:
         # If there's a resource name argument, show events for that specific resource
         if args.pod:
-            print(
-                f"{Fore.CYAN}Getting events for {args.kind} {args.pod}{Style.RESET_ALL}"
+            console.print(
+                f"[cyan]Getting events for {args.kind} {args.pod}[/cyan]"
             )
-            print(f"{Fore.CYAN}{'-' * 40}{Style.RESET_ALL}")
+            console.print(f"[cyan]{'-' * 40}[/cyan]")
             try:
                 v1 = get_k8s_client()
                 field_selector = (
@@ -408,97 +405,97 @@ Suggested usage:
                 events = v1.list_namespaced_event(
                     namespace, field_selector=field_selector
                 )
-                print(format_events(events))
+                console.print(format_events(events))
                 sys.exit(0)
             except Exception as e:
-                print(f"{Fore.RED}Error getting events: {e}{Style.RESET_ALL}")
+                console.print(f"[red]Error getting events: {e}[/red]")
                 sys.exit(1)
         # Otherwise, just list the kinds
         else:
-            print(f"{Fore.CYAN}Getting all unique kinds from events{Style.RESET_ALL}")
-            print(f"{Fore.CYAN}{'-' * 40}{Style.RESET_ALL}")
+            console.print(f"[cyan]Getting all unique kinds from events[/cyan]")
+            console.print(f"[cyan]{'-' * 40}[/cyan]")
             try:
                 kinds = get_all_kinds(namespace)
                 if kinds:
                     for kind in kinds:
-                        print(f"{Fore.GREEN}{kind}{Style.RESET_ALL}")
+                        console.print(f"[green]{kind}[/green]")
                 else:
-                    print(
-                        f"{Fore.YELLOW}No kinds found in namespace {namespace}{Style.RESET_ALL}"
+                    console.print(
+                        f"[yellow]No kinds found in namespace {namespace}[/yellow]"
                     )
                 sys.exit(0)
             except Exception as e:
-                print(f"{Fore.RED}Error getting kinds: {e}{Style.RESET_ALL}")
+                console.print(f"[red]Error getting kinds: {e}[/red]")
                 sys.exit(1)
 
     # Handle direct pod name argument (default case)
     if args.pod:
-        print(f"{Fore.CYAN}Getting events for pod: {args.pod}{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}{'-' * 40}{Style.RESET_ALL}")
+        console.print(f"[cyan]Getting events for pod: {args.pod}[/cyan]")
+        console.print(f"[cyan]{'-' * 40}[/cyan]")
         try:
             events = get_events_for_pod(namespace, args.pod, args.exceptions_only)
-            print(events)
+            console.print(events)
             sys.exit(0)
         except Exception as e:
-            print(f"{Fore.RED}Error getting events: {e}{Style.RESET_ALL}")
+            console.print(f"[red]Error getting events: {e}[/red]")
             sys.exit(1)
 
     # Handle -a flag for all events
     if args.all:
-        print(f"{Fore.CYAN}Getting events for all pods{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}{'-' * 40}{Style.RESET_ALL}")
+        console.print(f"[cyan]Getting events for all pods[/cyan]")
+        console.print(f"[cyan]{'-' * 40}[/cyan]")
         try:
             events = get_all_events(namespace, args.exceptions_only)
-            print(events)
+            console.print(events)
             sys.exit(0)
         except Exception as e:
-            print(f"{Fore.RED}Error getting events: {e}{Style.RESET_ALL}")
+            console.print(f"[red]Error getting events: {e}[/red]")
             sys.exit(1)
 
     # Normal interactive execution
-    print(f"{Fore.CYAN}Fetching pods...{Style.RESET_ALL}")
+    console.print(f"[cyan]Fetching pods...[/cyan]")
     pods = get_pods(namespace)
     failed_rs = get_failed_replicasets(namespace)
     pods.extend(failed_rs)
     if not pods:
-        print(f"{Fore.YELLOW}No pods found in namespace {namespace}{Style.RESET_ALL}")
+        console.print(f"[yellow]No pods found in namespace {namespace}[/yellow]")
         sys.exit(1)
 
     display_menu(pods)
     selection = get_user_selection(len(pods))
 
     if selection == "e":  # Non-normal events for all pods
-        print(f"\n{Fore.CYAN}Getting non-normal events for all pods{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}{'-' * 40}{Style.RESET_ALL}")
+        console.print(f"\n[cyan]Getting non-normal events for all pods[/cyan]")
+        console.print(f"[cyan]{'-' * 40}[/cyan]")
         try:
             events = get_all_events(namespace, non_normal=True)
-            print(events)
+            console.print(events)
         except Exception as e:
-            print(f"{Fore.RED}Error getting events: {e}{Style.RESET_ALL}")
+            console.print(f"[red]Error getting events: {e}[/red]")
     elif selection == "a":  # All events for all pods
-        print(f"\n{Fore.CYAN}Getting events for all pods{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}{'-' * 40}{Style.RESET_ALL}")
+        console.print(f"\n[cyan]Getting events for all pods[/cyan]")
+        console.print(f"[cyan]{'-' * 40}[/cyan]")
         try:
             events = get_all_events(namespace, args.exceptions_only)
-            print(events)
+            console.print(events)
         except Exception as e:
-            print(f"{Fore.RED}Error getting events: {e}{Style.RESET_ALL}")
+            console.print(f"[red]Error getting events: {e}[/red]")
     else:  # Events for specific pod
         selected_pod = pods[selection - 1]
-        print(f"\n{Fore.CYAN}Getting events for pod: {selected_pod}{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}{'-' * 40}{Style.RESET_ALL}")
+        console.print(f"\n[cyan]Getting events for pod: {selected_pod}[/cyan]")
+        console.print(f"[cyan]{'-' * 40}[/cyan]")
         try:
             events = get_events_for_pod(namespace, selected_pod, args.exceptions_only)
-            print(events)
+            console.print(events)
         except Exception as e:
-            print(f"{Fore.RED}Error getting events: {e}{Style.RESET_ALL}")
+            console.print(f"[red]Error getting events: {e}[/red]")
 
 if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print("\nExiting gracefully...")
+        console.print("\nExiting gracefully...")
         sys.exit(0)
     except Exception as e:
-        print(f"\nError: {e}")
+        console.print(f"\nError: {e}")
         sys.exit(1)
