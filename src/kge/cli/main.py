@@ -32,7 +32,16 @@ def get_k8s_client():
         config.load_kube_config()
         return client.CoreV1Api()
     except Exception as e:
-        print(f"Error initializing Kubernetes client: {e}")
+        if "MaxRetryError" in str(e):
+            print(f"{Fore.RED}Error: Unable to connect to Kubernetes cluster{Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}Please ensure that:{Style.RESET_ALL}")
+            print(f"  1. Your Kubernetes cluster is running")
+            print(f"  2. You have valid kubeconfig credentials")
+            print(f"  3. The cluster is accessible from your network")
+            print(f"  4. The API server is responding")
+            print(f"\nDetailed error: {e}")
+        else:
+            print(f"{Fore.RED}Error initializing Kubernetes client: {e}{Style.RESET_ALL}")
         sys.exit(1)
 
 def get_k8s_apps_client():
