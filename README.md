@@ -40,12 +40,12 @@ Pipx is like brew, only for python.
 
 ```bash
 # Install using pipx (recommended)
-pipx install kge
+pipx install kge-kubectl-get-events
 ```
 
 ```bash
 # Or install using pip, but not as easy
-pip install kge
+pip install kge-kubectl-get-events
 ```
 
 ## Usage
