@@ -27,6 +27,30 @@ failed_create_cache: Dict[str, tuple[List[Dict[str, str]], float]] = {}
 # Version information
 VERSION = get_version()
 
+def test_k8s_connection():
+    """Test the connection to the Kubernetes cluster."""
+    try:
+        print("Testing connection to Kubernetes cluster...")
+        get_k8s_client()
+        v1 = get_k8s_client()
+        namespaces = v1.list_namespace()
+        print(f"Connected to cluster. Current namespaces: {namespaces}")
+        # current_context = config.list_kube_config_contexts()[1]["context"]["name"]
+        # console.print(f"[green]Connected to cluster. Current context: {current_context}[/green]")
+    except Exception as e:
+        if e.status == 401:
+            console.print("[red]Error: Unauthorized access to Kubernetes cluster[/red]")
+            console.print(f"[yellow]Please ensure you have valid credentials and proper access to the namespace '{namespace}'[/yellow]")
+        elif e.status == 403:
+            console.print("[red]Error: Forbidden access to Kubernetes cluster[/red]")
+            console.print(f"[yellow]Please ensure you have valid credentials and proper access to the namespace '{namespace}'[/yellow]")
+        elif e.status == 111:
+            console.print("[red]Error: Connection refused to Kubernetes cluster[/red]")
+            console.print("[yellow]Please ensure your cluster is running and accessible[/yellow]")
+        else:
+            console.print(f"[red]Error connecting to Kubernetes: {e}[/red]")
+        sys.exit(1)
+
 def get_k8s_client():
     """Initialize and return a Kubernetes client."""
     try:
@@ -86,11 +110,7 @@ def get_pods(namespace: str) -> List[str]:
         pod_cache[namespace] = (pod_names, current_time)
         return pod_names
     except client.ApiException as e:
-        if e.status == 401:
-            console.print("[red]Error: Unauthorized access to Kubernetes cluster[/red]")
-            console.print(f"[yellow]Please ensure you have valid credentials and proper access to the namespace '{namespace}'[/yellow]")
-        else:
-            console.print(f"[red]Error fetching pods: {e}[/red]")
+        console.print(f"[red]Error fetching pods: {e}[/red]")
         sys.exit(1)
 
 def get_events_for_pod(namespace: str, pod: str, non_normal: bool = False) -> str:
@@ -410,6 +430,14 @@ Suggested usage:
         install_completion()
         sys.exit(0)
 
+    # Check if we can connect to Kubernetes
+    try:
+        get_k8s_client()
+        test_k8s_connection()
+    except Exception as e:
+        console.print(f"[red]Error connecting to Kubernetes: {e}[/red]")
+        sys.exit(1)
+
     if args.completion:
         try:
             completion_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'completion', '_kge')
@@ -419,13 +447,6 @@ Suggested usage:
         except Exception as e:
             console.print(f"[red]Error reading completion file: {e}[/red]")
             sys.exit(1)
-
-    # Check if we can connect to Kubernetes
-    try:
-        get_k8s_client()
-    except Exception as e:
-        console.print(f"[red]Error connecting to Kubernetes: {e}[/red]")
-        sys.exit(1)
 
     # Handle completion requests
     if args.complete_pod:
