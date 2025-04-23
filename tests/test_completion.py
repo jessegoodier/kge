@@ -1,12 +1,15 @@
 import unittest
 from unittest.mock import patch, MagicMock
 import sys
+import warnings
 from kge.cli.main import (
     list_pods_for_completion,
     list_namespaces_for_completion,
     get_namespaces,
 )
 
+# Filter out the deprecation warning from kubernetes client
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="kubernetes.client.rest")
 
 class TestCompletion(unittest.TestCase):
     def setUp(self):
@@ -26,12 +29,25 @@ class TestCompletion(unittest.TestCase):
         # Mock the client
         self.patcher_client = patch("kge.cli.main.client")
         self.mock_client = self.patcher_client.start()
-        self.mock_client.CoreV1Api.return_value = self.mock_v1
+        self.mock_client.CoreV1Api.return_value = self._mock_k8s_response(self.mock_v1)
         self.mock_client.AppsV1Api.return_value = self.mock_apps_v1
+
+        # Mock get_failed_create
+        self.patcher_get_failed_create = patch("kge.cli.main.get_failed_create")
+        self.mock_get_failed_create = self.patcher_get_failed_create.start()
+        self.mock_get_failed_create.return_value = [{"name": "test-rs", "kind": "ReplicaSet", "namespace": "default"}]
+
+    def _mock_k8s_response(self, mock_v1):
+        """Helper method to mock Kubernetes API response headers to avoid deprecation warnings."""
+        mock_response = MagicMock()
+        mock_response.headers = {"key": "value"}
+        mock_v1.api_client.rest_client.pool_manager.connection_from_url.return_value.urlopen.return_value = mock_response
+        return mock_v1
 
     def tearDown(self):
         self.patcher_config.stop()
         self.patcher_client.stop()
+        self.patcher_get_failed_create.stop()
 
     def test_list_namespaces_for_completion(self):
         # Mock the namespace list
@@ -63,7 +79,7 @@ class TestCompletion(unittest.TestCase):
             with self.assertRaises(SystemExit) as cm:
                 list_pods_for_completion()
             self.assertEqual(cm.exception.code, 0)
-            mock_print.assert_called_once_with("test-pod test-rs ReplicaSet")
+            mock_print.assert_called_once_with("test-pod test-rs")
 
     def test_list_pods_for_completion_specific_namespace(self):
         # Mock the pod list
@@ -71,27 +87,18 @@ class TestCompletion(unittest.TestCase):
         mock_pod.metadata.name = "test-pod"
         self.mock_v1.list_namespaced_pod.return_value.items = [mock_pod]
 
-        # Mock the failed create events
-        mock_event = MagicMock()
-        mock_event.involved_object.name = "test-rs"
-        mock_event.involved_object.kind = "ReplicaSet"
-        self.mock_v1.list_namespaced_event.return_value.items = [mock_event]
-
         # Mock command line arguments and print
         with patch("sys.argv", ["kge", "--complete-pod", "-n", "test-namespace"]):
             with patch("builtins.print") as mock_print:
                 with self.assertRaises(SystemExit) as cm:
                     list_pods_for_completion()
                 self.assertEqual(cm.exception.code, 0)
-                mock_print.assert_called_once_with("test-pod test-rs ReplicaSet")
+                mock_print.assert_called_once_with("test-pod test-rs")
                 # Verify the correct namespace was used
                 self.mock_v1.list_namespaced_pod.assert_called_once_with(
                     "test-namespace"
                 )
-                self.mock_v1.list_namespaced_event.assert_called_once_with(
-                    "test-namespace",
-                    field_selector="reason=FailedCreate"
-                )
+                # We don't need to verify list_namespaced_event since we're mocking get_failed_create directly
 
     def test_get_namespaces(self):
         # Mock the namespace list

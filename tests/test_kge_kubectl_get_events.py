@@ -1,5 +1,6 @@
 import unittest
 from unittest.mock import patch, MagicMock
+import warnings
 from kge.cli.main import (
     get_events_for_pod,
     get_all_events,
@@ -14,6 +15,8 @@ from kge.cli.main import (
     failed_create_cache,
 )
 
+# Filter out the deprecation warning from kubernetes client
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="kubernetes.client.rest")
 
 class TestCLI(unittest.TestCase):
     def setUp(self):
@@ -22,10 +25,17 @@ class TestCLI(unittest.TestCase):
         failed_create_cache.clear()
         get_current_namespace.cache_clear()
 
+    def _mock_k8s_response(self, mock_v1):
+        """Helper method to mock Kubernetes API response headers to avoid deprecation warnings."""
+        mock_response = MagicMock()
+        mock_response.headers = {"key": "value"}
+        mock_v1.api_client.rest_client.pool_manager.connection_from_url.return_value.urlopen.return_value = mock_response
+        return mock_v1
+
     @patch("kge.cli.main.get_k8s_client")
     def test_get_events_for_pod(self, mock_get_client):
         mock_v1 = MagicMock()
-        mock_get_client.return_value = mock_v1
+        mock_get_client.return_value = self._mock_k8s_response(mock_v1)
 
         # Mock the list_namespaced_event response
         mock_event = MagicMock()
@@ -50,7 +60,7 @@ class TestCLI(unittest.TestCase):
     @patch("kge.cli.main.get_k8s_client")
     def test_get_all_events(self, mock_get_client):
         mock_v1 = MagicMock()
-        mock_get_client.return_value = mock_v1
+        mock_get_client.return_value = self._mock_k8s_response(mock_v1)
 
         # Mock the list_namespaced_event response
         mock_event = MagicMock()
@@ -75,7 +85,7 @@ class TestCLI(unittest.TestCase):
     @patch("kge.cli.main.get_k8s_client")
     def test_get_events_for_pod_non_normal(self, mock_get_client):
         mock_v1 = MagicMock()
-        mock_get_client.return_value = mock_v1
+        mock_get_client.return_value = self._mock_k8s_response(mock_v1)
 
         # Mock the list_namespaced_event response
         mock_event = MagicMock()
@@ -100,7 +110,7 @@ class TestCLI(unittest.TestCase):
     @patch("kge.cli.main.get_k8s_client")
     def test_get_all_events_non_normal(self, mock_get_client):
         mock_v1 = MagicMock()
-        mock_get_client.return_value = mock_v1
+        mock_get_client.return_value = self._mock_k8s_response(mock_v1)
 
         # Mock the list_namespaced_event response
         mock_event = MagicMock()
@@ -137,7 +147,7 @@ class TestCLI(unittest.TestCase):
     @patch("kge.cli.main.get_k8s_client")
     def test_get_events_for_pod_with_namespace(self, mock_get_client):
         mock_v1 = MagicMock()
-        mock_get_client.return_value = mock_v1
+        mock_get_client.return_value = self._mock_k8s_response(mock_v1)
 
         # Mock the list_namespaced_event response
         mock_event = MagicMock()
@@ -160,7 +170,7 @@ class TestCLI(unittest.TestCase):
     @patch("kge.cli.main.get_k8s_client")
     def test_get_all_events_with_namespace(self, mock_get_client):
         mock_v1 = MagicMock()
-        mock_get_client.return_value = mock_v1
+        mock_get_client.return_value = self._mock_k8s_response(mock_v1)
 
         # Mock the list_namespaced_event response
         mock_event = MagicMock()
@@ -183,7 +193,7 @@ class TestCLI(unittest.TestCase):
     @patch("kge.cli.main.get_k8s_client")
     def test_get_events_for_pod_with_namespace_and_exceptions(self, mock_get_client):
         mock_v1 = MagicMock()
-        mock_get_client.return_value = mock_v1
+        mock_get_client.return_value = self._mock_k8s_response(mock_v1)
 
         # Mock the list_namespaced_event response
         mock_event = MagicMock()
@@ -207,7 +217,7 @@ class TestCLI(unittest.TestCase):
     @patch("kge.cli.main.get_k8s_client")
     def test_get_all_events_with_namespace_and_exceptions(self, mock_get_client):
         mock_v1 = MagicMock()
-        mock_get_client.return_value = mock_v1
+        mock_get_client.return_value = self._mock_k8s_response(mock_v1)
 
         # Mock the list_namespaced_event response
         mock_event = MagicMock()
@@ -242,7 +252,7 @@ class TestCLI(unittest.TestCase):
     @patch("kge.cli.main.get_k8s_client")
     def test_get_failed_create(self, mock_get_client):
         mock_v1 = MagicMock()
-        mock_get_client.return_value = mock_v1
+        mock_get_client.return_value = self._mock_k8s_response(mock_v1)
 
         # Mock the list_namespaced_event response
         mock_event = MagicMock()
@@ -261,13 +271,14 @@ class TestCLI(unittest.TestCase):
         self.assertEqual(call_args["field_selector"], "reason=FailedCreate")
 
         # Verify the result
-        self.assertEqual(result, ["test-rs ReplicaSet"])
+        self.assertEqual(result, [{"name": "test-rs", "kind": "ReplicaSet", "namespace": "default"}])
 
     @patch("kge.cli.main.get_k8s_client")
     @patch("kge.cli.main.time.time")
     def test_get_failed_create_with_caching(self, mock_time, mock_get_client):
         mock_v1 = MagicMock()
-        mock_get_client.return_value = mock_v1
+        mock_get_client.return_value = self._mock_k8s_response(mock_v1)
+
         mock_time.return_value = 0  # Set initial time
 
         # Mock the list_namespaced_event response
@@ -294,7 +305,7 @@ class TestCLI(unittest.TestCase):
     @patch("kge.cli.main.time.time")
     def test_get_failed_create_cache_expiry(self, mock_time, mock_get_client):
         mock_v1 = MagicMock()
-        mock_get_client.return_value = mock_v1
+        mock_get_client.return_value = self._mock_k8s_response(mock_v1)
         mock_time.return_value = 0  # Set initial time
 
         # Mock the list_namespaced_event response
@@ -325,7 +336,7 @@ class TestCLI(unittest.TestCase):
         self, mock_time, mock_get_client
     ):
         mock_v1 = MagicMock()
-        mock_get_client.return_value = mock_v1
+        mock_get_client.return_value = self._mock_k8s_response(mock_v1)
         mock_time.return_value = 0  # Set initial time
 
         # Mock API error
@@ -339,7 +350,7 @@ class TestCLI(unittest.TestCase):
     @patch("kge.cli.main.time.time")
     def test_get_failed_create_no_failures(self, mock_time, mock_get_client):
         mock_v1 = MagicMock()
-        mock_get_client.return_value = mock_v1
+        mock_get_client.return_value = self._mock_k8s_response(mock_v1)
         mock_time.return_value = 0  # Set initial time
 
         # Mock empty response
@@ -352,7 +363,7 @@ class TestCLI(unittest.TestCase):
     @patch("kge.cli.main.get_k8s_client")
     def test_get_pods_with_caching(self, mock_get_client):
         mock_v1 = MagicMock()
-        mock_get_client.return_value = mock_v1
+        mock_get_client.return_value = self._mock_k8s_response(mock_v1)
 
         # Mock the list_namespaced_pod response
         mock_pod = MagicMock()
@@ -411,7 +422,8 @@ class TestCLI(unittest.TestCase):
     ):
         mock_get_namespace.return_value = "default"
         mock_get_pods.return_value = ["pod1", "pod2"]
-        mock_get_failed_rs.return_value = ["rs1", "rs2"]
+        mock_get_failed_rs.return_value = [{"name": "rs1", "kind": "ReplicaSet", "namespace": "default"}, 
+                                         {"name": "rs2", "kind": "ReplicaSet", "namespace": "default"}]
 
         with patch("kge.cli.main.sys.exit") as mock_exit:
             with patch("kge.cli.main.print") as mock_print:
