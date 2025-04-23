@@ -5,13 +5,13 @@ from kge.cli.main import (
     get_all_events,
     get_k8s_client,
     get_k8s_apps_client,
-    get_failed_replicasets,
+    get_failed_create,
     get_pods,
     get_current_namespace,
     list_pods_for_completion,
     CACHE_DURATION,
     pod_cache,
-    replicaset_cache,
+    failed_create_cache,
 )
 
 
@@ -19,7 +19,7 @@ class TestCLI(unittest.TestCase):
     def setUp(self):
         # Clear caches before each test
         pod_cache.clear()
-        replicaset_cache.clear()
+        failed_create_cache.clear()
         get_current_namespace.cache_clear()
 
     @patch("kge.cli.main.get_k8s_client")
@@ -239,26 +239,111 @@ class TestCLI(unittest.TestCase):
                 mock_api.assert_called_once()
                 self.assertEqual(result, "mock_apps_client")
 
-    @patch("kge.cli.main.get_k8s_apps_client")
-    def test_get_failed_replicasets(self, mock_get_apps_client):
+    @patch("kge.cli.main.get_k8s_client")
+    def test_get_failed_create(self, mock_get_client):
         mock_v1 = MagicMock()
-        mock_get_apps_client.return_value = mock_v1
+        mock_get_client.return_value = mock_v1
 
-        # Mock the list_namespaced_replica_set response
-        mock_rs = MagicMock()
-        mock_rs.metadata.name = "test-rs"
-        mock_condition = MagicMock()
-        mock_condition.type = "ReplicaFailure"
-        mock_rs.status.conditions = [mock_condition]
-        mock_v1.list_namespaced_replica_set.return_value.items = [mock_rs]
+        # Mock the list_namespaced_event response
+        mock_event = MagicMock()
+        mock_event.involved_object.name = "test-rs"
+        mock_v1.list_namespaced_event.return_value.items = [mock_event]
 
-        result = get_failed_replicasets("default")
+        result = get_failed_create("default")
 
-        # Verify the API call
-        mock_v1.list_namespaced_replica_set.assert_called_once_with("default")
+        # Verify the field selector
+        mock_v1.list_namespaced_event.assert_called_once()
+        call_args = mock_v1.list_namespaced_event.call_args[1]
+        self.assertEqual(call_args["field_selector"], "reason=FailedCreate")
 
         # Verify the result
         self.assertEqual(result, ["test-rs"])
+
+    @patch("kge.cli.main.get_k8s_client")
+    @patch("kge.cli.main.time.time")
+    def test_get_failed_create_with_caching(self, mock_time, mock_get_client):
+        mock_v1 = MagicMock()
+        mock_get_client.return_value = mock_v1
+        mock_time.return_value = 0  # Set initial time
+
+        # Mock the list_namespaced_event response
+        mock_event = MagicMock()
+        mock_event.involved_object.name = "test-rs"
+        mock_v1.list_namespaced_event.return_value.items = [mock_event]
+
+        # First call should hit the API
+        result1 = get_failed_create("default")
+        mock_v1.list_namespaced_event.assert_called_once()
+
+        # Reset mock call count
+        mock_v1.list_namespaced_event.reset_mock()
+
+        # Second call within cache duration should use cache
+        mock_time.return_value = CACHE_DURATION - 1  # Still within cache duration
+        result2 = get_failed_create("default")
+        mock_v1.list_namespaced_event.assert_not_called()
+
+        # Verify results are the same
+        self.assertEqual(result1, result2)
+
+    @patch("kge.cli.main.get_k8s_client")
+    @patch("kge.cli.main.time.time")
+    def test_get_failed_create_cache_expiry(self, mock_time, mock_get_client):
+        mock_v1 = MagicMock()
+        mock_get_client.return_value = mock_v1
+        mock_time.return_value = 0  # Set initial time
+
+        # Mock the list_namespaced_event response
+        mock_event = MagicMock()
+        mock_event.involved_object.name = "test-rs"
+        mock_v1.list_namespaced_event.return_value.items = [mock_event]
+
+        # First call
+        result1 = get_failed_create("default")
+        mock_v1.list_namespaced_event.assert_called_once()
+
+        # Reset mock call count
+        mock_v1.list_namespaced_event.reset_mock()
+
+        # Simulate cache expiry by setting time beyond cache duration
+        mock_time.return_value = CACHE_DURATION + 1
+
+        # Second call should hit API again due to cache expiry
+        result2 = get_failed_create("default")
+        mock_v1.list_namespaced_event.assert_called_once()
+
+        # Verify results are the same
+        self.assertEqual(result1, result2)
+
+    @patch("kge.cli.main.get_k8s_client")
+    @patch("kge.cli.main.time.time")
+    def test_get_failed_create_error_handling(
+        self, mock_time, mock_get_client
+    ):
+        mock_v1 = MagicMock()
+        mock_get_client.return_value = mock_v1
+        mock_time.return_value = 0  # Set initial time
+
+        # Mock API error
+        mock_v1.list_namespaced_event.side_effect = Exception("API Error")
+
+        # Should return empty list on error
+        result = get_failed_create("default")
+        self.assertEqual(result, [])
+
+    @patch("kge.cli.main.get_k8s_client")
+    @patch("kge.cli.main.time.time")
+    def test_get_failed_create_no_failures(self, mock_time, mock_get_client):
+        mock_v1 = MagicMock()
+        mock_get_client.return_value = mock_v1
+        mock_time.return_value = 0  # Set initial time
+
+        # Mock empty response
+        mock_v1.list_namespaced_event.return_value.items = []
+
+        # Should return empty list when no failed create
+        result = get_failed_create("default")
+        self.assertEqual(result, [])
 
     @patch("kge.cli.main.get_k8s_client")
     def test_get_pods_with_caching(self, mock_get_client):
@@ -315,7 +400,7 @@ class TestCLI(unittest.TestCase):
             self.assertEqual(result3, "test-ns")
 
     @patch("kge.cli.main.get_pods")
-    @patch("kge.cli.main.get_failed_replicasets")
+    @patch("kge.cli.main.get_failed_create")
     @patch("kge.cli.main.get_current_namespace")
     def test_list_pods_for_completion(
         self, mock_get_namespace, mock_get_failed_rs, mock_get_pods
@@ -331,100 +416,6 @@ class TestCLI(unittest.TestCase):
                 # Verify the output
                 mock_print.assert_called_once_with("pod1 pod2 rs1 rs2")
                 mock_exit.assert_called_once_with(0)
-
-    @patch("kge.cli.main.get_k8s_apps_client")
-    @patch("kge.cli.main.time.time")
-    def test_get_failed_replicasets_with_caching(self, mock_time, mock_get_apps_client):
-        mock_v1 = MagicMock()
-        mock_get_apps_client.return_value = mock_v1
-        mock_time.return_value = 0  # Set initial time
-
-        # Mock the list_namespaced_replica_set response
-        mock_rs = MagicMock()
-        mock_rs.metadata.name = "test-rs"
-        mock_condition = MagicMock()
-        mock_condition.type = "ReplicaFailure"
-        mock_rs.status.conditions = [mock_condition]
-        mock_v1.list_namespaced_replica_set.return_value.items = [mock_rs]
-
-        # First call should hit the API
-        result1 = get_failed_replicasets("default")
-        mock_v1.list_namespaced_replica_set.assert_called_once()
-
-        # Reset mock call count
-        mock_v1.list_namespaced_replica_set.reset_mock()
-
-        # Second call within cache duration should use cache
-        mock_time.return_value = CACHE_DURATION - 1  # Still within cache duration
-        result2 = get_failed_replicasets("default")
-        mock_v1.list_namespaced_replica_set.assert_not_called()
-
-        # Verify results are the same
-        self.assertEqual(result1, result2)
-        self.assertEqual(result1, ["test-rs"])
-
-    @patch("kge.cli.main.get_k8s_apps_client")
-    @patch("kge.cli.main.time.time")
-    def test_get_failed_replicasets_cache_expiry(self, mock_time, mock_get_apps_client):
-        mock_v1 = MagicMock()
-        mock_get_apps_client.return_value = mock_v1
-        mock_time.return_value = 0  # Set initial time
-
-        # Mock the list_namespaced_replica_set response
-        mock_rs = MagicMock()
-        mock_rs.metadata.name = "test-rs"
-        mock_condition = MagicMock()
-        mock_condition.type = "ReplicaFailure"
-        mock_rs.status.conditions = [mock_condition]
-        mock_v1.list_namespaced_replica_set.return_value.items = [mock_rs]
-
-        # First call
-        result1 = get_failed_replicasets("default")
-        mock_v1.list_namespaced_replica_set.assert_called_once()
-
-        # Reset mock call count
-        mock_v1.list_namespaced_replica_set.reset_mock()
-
-        # Simulate cache expiry by setting time beyond cache duration
-        mock_time.return_value = CACHE_DURATION + 1
-
-        # Second call should hit API again due to cache expiry
-        result2 = get_failed_replicasets("default")
-        mock_v1.list_namespaced_replica_set.assert_called_once()
-
-        # Verify results are the same
-        self.assertEqual(result1, result2)
-        self.assertEqual(result1, ["test-rs"])
-
-    @patch("kge.cli.main.get_k8s_apps_client")
-    @patch("kge.cli.main.time.time")
-    def test_get_failed_replicasets_error_handling(
-        self, mock_time, mock_get_apps_client
-    ):
-        mock_v1 = MagicMock()
-        mock_get_apps_client.return_value = mock_v1
-        mock_time.return_value = 0  # Set initial time
-
-        # Mock API error
-        mock_v1.list_namespaced_replica_set.side_effect = Exception("API Error")
-
-        # Should return empty list on error
-        result = get_failed_replicasets("default")
-        self.assertEqual(result, [])
-
-    @patch("kge.cli.main.get_k8s_apps_client")
-    @patch("kge.cli.main.time.time")
-    def test_get_failed_replicasets_no_failures(self, mock_time, mock_get_apps_client):
-        mock_v1 = MagicMock()
-        mock_get_apps_client.return_value = mock_v1
-        mock_time.return_value = 0  # Set initial time
-
-        # Mock empty response
-        mock_v1.list_namespaced_replica_set.return_value.items = []
-
-        # Should return empty list when no failed replicasets
-        result = get_failed_replicasets("default")
-        self.assertEqual(result, [])
 
 
 if __name__ == "__main__":

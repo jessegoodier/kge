@@ -19,10 +19,10 @@ def get_version():
 # Initialize rich console
 console = Console()
 
-# Cache duration for pods and replicasets
+# Cache duration for pods and failed creates
 CACHE_DURATION = 10
 pod_cache: Dict[str, tuple[List[str], float]] = {}
-replicaset_cache: Dict[str, tuple[List[str], float]] = {}
+failed_create_cache: Dict[str, tuple[List[str], float]] = {}
 
 # Version information
 VERSION = get_version()
@@ -140,30 +140,28 @@ def format_events(events) -> str:
         )
     return "\n".join(output)
 
-def get_failed_replicasets(namespace: str) -> List[str]:
-    """Get list of failed ReplicaSets in the given namespace"""
+def get_failed_create(namespace: str) -> List[str]:
+    """Get list of things that failed to create in the given namespace"""
     current_time = time.time()
     
-    # Check cache first
-    if namespace in replicaset_cache:
-        cached_rs, cache_time = replicaset_cache[namespace]
+    # Check cache
+    if namespace in failed_create_cache:
+        cached_failed_rs, cache_time = failed_create_cache[namespace]
         if current_time - cache_time < CACHE_DURATION:
-            return cached_rs
+            return cached_failed_rs
     
-    # Fetch fresh data
+    # kubectl get events --field-selector reason=FailedCreate
     try:
-        v1 = get_k8s_apps_client()
-        replicasets = v1.list_namespaced_replica_set(namespace)
+        v1 = get_k8s_client()
+        events = v1.list_namespaced_event(namespace, field_selector="reason=FailedCreate")
         failed_rs = []
-        for rs in replicasets.items:
-            if rs.status and rs.status.conditions:
-                for condition in rs.status.conditions:
-                    if condition.type == "ReplicaFailure":
-                        failed_rs.append(rs.metadata.name)
-                        break
+        for event in events.items:
+            # Add the name of the involved object (e.g. ReplicaSet name)
+            if hasattr(event, 'involved_object') and hasattr(event.involved_object, 'name'):
+                failed_rs.append(event.involved_object.name)
 
         # Update cache
-        replicaset_cache[namespace] = (failed_rs, current_time)
+        failed_create_cache[namespace] = (failed_rs, current_time)
         return failed_rs
     except Exception as e:
         console.print(f"Error fetching ReplicaSets: {e}")
@@ -182,8 +180,8 @@ def list_pods_for_completion():
         namespace = get_current_namespace()
 
     pods = get_pods(namespace)
-    failed_rs = get_failed_replicasets(namespace)
-    pods.extend(failed_rs)
+    failed_create = get_failed_create(namespace)
+    pods.extend(failed_create)
     print(" ".join(pods))
     sys.exit(0)
 
@@ -455,8 +453,8 @@ Suggested usage:
     # Normal interactive execution
     console.print(f"[cyan]Fetching pods...[/cyan]")
     pods = get_pods(namespace)
-    failed_rs = get_failed_replicasets(namespace)
-    pods.extend(failed_rs)
+    failed_create = get_failed_create(namespace)
+    pods.extend(failed_create)
     if not pods:
         console.print(f"[yellow]No pods found in namespace {namespace}[/yellow]")
         sys.exit(1)

@@ -52,11 +52,10 @@ class TestCompletion(unittest.TestCase):
         mock_pod.metadata.name = "test-pod"
         self.mock_v1.list_namespaced_pod.return_value.items = [mock_pod]
 
-        # Mock the replicaset list
-        mock_rs = MagicMock()
-        mock_rs.metadata.name = "test-rs"
-        mock_rs.status.conditions = [MagicMock(type="ReplicaFailure")]
-        self.mock_apps_v1.list_namespaced_replica_set.return_value.items = [mock_rs]
+        # Mock the failed create events
+        mock_event = MagicMock()
+        mock_event.involved_object.name = "test-rs"
+        self.mock_v1.list_namespaced_event.return_value.items = [mock_event]
 
         # Mock print and handle sys.exit
         with patch("builtins.print") as mock_print:
@@ -71,11 +70,10 @@ class TestCompletion(unittest.TestCase):
         mock_pod.metadata.name = "test-pod"
         self.mock_v1.list_namespaced_pod.return_value.items = [mock_pod]
 
-        # Mock the replicaset list
-        mock_rs = MagicMock()
-        mock_rs.metadata.name = "test-rs"
-        mock_rs.status.conditions = [MagicMock(type="ReplicaFailure")]
-        self.mock_apps_v1.list_namespaced_replica_set.return_value.items = [mock_rs]
+        # Mock the failed create events
+        mock_event = MagicMock()
+        mock_event.involved_object.name = "test-rs"
+        self.mock_v1.list_namespaced_event.return_value.items = [mock_event]
 
         # Mock command line arguments and print
         with patch("sys.argv", ["kge", "--complete-pod", "-n", "test-namespace"]):
@@ -88,8 +86,9 @@ class TestCompletion(unittest.TestCase):
                 self.mock_v1.list_namespaced_pod.assert_called_once_with(
                     "test-namespace"
                 )
-                self.mock_apps_v1.list_namespaced_replica_set.assert_called_once_with(
-                    "test-namespace"
+                self.mock_v1.list_namespaced_event.assert_called_once_with(
+                    "test-namespace",
+                    field_selector="reason=FailedCreate"
                 )
 
     def test_get_namespaces(self):
