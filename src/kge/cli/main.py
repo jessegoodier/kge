@@ -22,7 +22,7 @@ console = Console()
 # Cache duration for pods and failed creates
 CACHE_DURATION = 10
 pod_cache: Dict[str, tuple[List[str], float]] = {}
-failed_create_cache: Dict[str, tuple[List[str], float]] = {}
+failed_create_cache: Dict[str, tuple[List[Dict[str, str]], float]] = {}
 
 # Version information
 VERSION = get_version()
@@ -140,8 +140,47 @@ def format_events(events) -> str:
         )
     return "\n".join(output)
 
-def get_failed_create(namespace: str) -> List[str]:
-    """Get list of things that failed to create in the given namespace"""
+def is_resource_healthy(namespace: str, name: str, kind: str) -> bool:
+    """Check if a Kubernetes resource is healthy."""
+    try:
+        if kind == "ReplicaSet":
+            apps_v1 = get_k8s_apps_client()
+            rs = apps_v1.read_namespaced_replica_set(name, namespace)
+            if rs.status.ready_replicas == rs.status.replicas:
+                return True
+            else:
+                if hasattr(rs.metadata, 'owner_references') and rs.metadata.owner_references:
+                    owner = rs.metadata.owner_references[0]  # Get first owner
+                    return is_resource_healthy(namespace, owner.name, owner.kind)
+                return False
+        elif kind == "Deployment":
+            apps_v1 = get_k8s_apps_client()
+            deployment = apps_v1.read_namespaced_deployment(name, namespace)
+            return deployment.status.ready_replicas == deployment.status.replicas
+        elif kind == "StatefulSet":
+            apps_v1 = get_k8s_apps_client()
+            sts = apps_v1.read_namespaced_stateful_set(name, namespace)
+            return sts.status.ready_replicas == sts.status.replicas
+        elif kind == "Pod":
+            v1 = get_k8s_client()
+            pod = v1.read_namespaced_pod(name, namespace)
+            return pod.status.phase == "Running"
+        else:
+            # For other resource types, we'll consider them healthy if they exist
+            return True
+    except Exception as e:
+        print(f"Error checking health of {name} {kind}: {e}")
+        # If we can't get the resource, assume it's not healthy
+        return False
+
+def get_failed_create(namespace: str) -> List[Dict[str, str]]:
+    """Get list of things that failed to create in the given namespace.
+    
+    Returns a list of dictionaries with keys:
+    - name: The name of the resource
+    - kind: The kind of resource (e.g. ReplicaSet, Deployment)
+    - namespace: The namespace the resource is in
+    """
     current_time = time.time()
     
     # Check cache
@@ -154,17 +193,28 @@ def get_failed_create(namespace: str) -> List[str]:
     try:
         v1 = get_k8s_client()
         events = v1.list_namespaced_event(namespace, field_selector="reason=FailedCreate")
-        failed_rs = []
+        failed_create_items = []
         for event in events.items:
-            # Add the name of the involved object (e.g. ReplicaSet name)
+            # Check if the involved object exists and is healthy
             if hasattr(event, 'involved_object') and hasattr(event.involved_object, 'name'):
-                failed_rs.append(event.involved_object.name + " " + event.involved_object.kind)
+                name = event.involved_object.name
+                kind = event.involved_object.kind
+                if not is_resource_healthy(namespace, name, kind):
+                    failed_create_items.append({
+                        "name": name,
+                        "kind": kind,
+                        "namespace": namespace
+                    })
             else:
-                failed_rs.append(event.metadata.name) # TODO: Add what kind of event it is this?
+                failed_create_items.append({
+                    "name": event.metadata.name,
+                    "kind": "Unknown",  # TODO: Add what kind of event it is this?
+                    "namespace": namespace
+                })
 
         # Update cache
-        failed_create_cache[namespace] = (failed_rs, current_time)
-        return failed_rs
+        failed_create_cache[namespace] = (failed_create_items, current_time)
+        return failed_create_items
     except Exception as e:
         console.print(f"Error fetching ReplicaSets: {e}")
         return []
@@ -183,7 +233,7 @@ def list_pods_for_completion():
 
     pods = get_pods(namespace)
     failed_create = get_failed_create(namespace)
-    pods.extend(failed_create)
+    pods.extend([item["name"] for item in failed_create])
     print(" ".join(pods))
     sys.exit(0)
 
@@ -194,7 +244,7 @@ def display_menu(pods: List[str]) -> None:
     console.print("  [green]a[/green]) All pods, all events")
     for i, pod in enumerate(pods, 1):
         # Check if the pod is a failed create item
-        if pod in get_failed_create(get_current_namespace()):
+        if pod in [item["name"] for item in get_failed_create(get_current_namespace())]:
             console.print(f"[green]{i:3d}[/green]) [dark_orange]{pod}[/dark_orange] [red]FailedCreate[/red]")
         else:
             console.print(f"[green]{i:3d}[/green]) {pod}")
@@ -460,7 +510,7 @@ Suggested usage:
     console.print(f"[cyan]Fetching pods...[/cyan]")
     pods = get_pods(namespace)
     failed_create = get_failed_create(namespace)
-    pods.extend(failed_create)
+    pods.extend([item["name"] for item in failed_create])
     if not pods:
         console.print(f"[yellow]No pods found in namespace {namespace}[/yellow]")
         sys.exit(1)
