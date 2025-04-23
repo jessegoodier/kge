@@ -25,14 +25,18 @@ A simple yet powerful CLI tool for viewing and monitoring Kubernetes events with
 ## Features
 
 - 🔍 View events for specific pods
+- 👻 Find missing pods because of missing serviceAccounts or volumes
 - 📊 View all events in a namespace
 - ⚠️ Filter to show only non-normal events
 - 🖱️ Interactive pod selection
 - 🎨 Color-coded output
 - ⌨️ Shell completion support (zsh)
-- 🔄 View events for any Kubernetes resource type (Pods, Deployments, etc.)
+- 🔄 View events for any Kubernetes resource type (Pods, Deployments, CRDs, etc.)
 
 ## Installation
+
+A brew formula is a WIP. Until then, use pipx. Which can be installed with `brew install pipx`
+Pipx is like brew, only for python.
 
 ```bash
 # Install using pipx (recommended)
@@ -40,7 +44,7 @@ pipx install kge
 ```
 
 ```bash
-# Or install using pip
+# Or install using pip, but not as easy
 pip install kge
 ```
 
@@ -86,25 +90,18 @@ View events for a specific resource type:
 kge -k <kind> <resource-name>
 ```
 
-Examples:
-
-```bash
-# View events for a Deployment
-kge -k Deployment my-deployment
-
-# View events for a Lease in kube-system namespace
-kge -n kube-system -k Lease kube-controller-manager
-
-# View events for a Service
-kge -k Service my-service
-```
-
 ### Interactive Mode
 
 Run without arguments for interactive pod selection:
 
 ```bash
 kge
+```
+
+Check a different namespace than your current context:
+
+```bash
+kge -n kubecost
 ```
 
 ### Shell Completion
