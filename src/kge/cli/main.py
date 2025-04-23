@@ -30,13 +30,11 @@ VERSION = get_version()
 def test_k8s_connection():
     """Test the connection to the Kubernetes cluster."""
     try:
-        print("Testing connection to Kubernetes cluster...")
+
         get_k8s_client()
         v1 = get_k8s_client()
         namespaces = v1.list_namespace()
-        print(f"Connected to cluster. Current namespaces: {namespaces}")
-        # current_context = config.list_kube_config_contexts()[1]["context"]["name"]
-        # console.print(f"[green]Connected to cluster. Current context: {current_context}[/green]")
+
     except Exception as e:
         if e.status == 401:
             console.print("[red]Error: Unauthorized access to Kubernetes cluster[/red]")
