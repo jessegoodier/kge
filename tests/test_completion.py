@@ -55,6 +55,7 @@ class TestCompletion(unittest.TestCase):
         # Mock the failed create events
         mock_event = MagicMock()
         mock_event.involved_object.name = "test-rs"
+        mock_event.involved_object.kind = "ReplicaSet"
         self.mock_v1.list_namespaced_event.return_value.items = [mock_event]
 
         # Mock print and handle sys.exit
@@ -62,7 +63,7 @@ class TestCompletion(unittest.TestCase):
             with self.assertRaises(SystemExit) as cm:
                 list_pods_for_completion()
             self.assertEqual(cm.exception.code, 0)
-            mock_print.assert_called_once_with("test-pod test-rs")
+            mock_print.assert_called_once_with("test-pod test-rs ReplicaSet")
 
     def test_list_pods_for_completion_specific_namespace(self):
         # Mock the pod list
@@ -73,6 +74,7 @@ class TestCompletion(unittest.TestCase):
         # Mock the failed create events
         mock_event = MagicMock()
         mock_event.involved_object.name = "test-rs"
+        mock_event.involved_object.kind = "ReplicaSet"
         self.mock_v1.list_namespaced_event.return_value.items = [mock_event]
 
         # Mock command line arguments and print
@@ -81,7 +83,7 @@ class TestCompletion(unittest.TestCase):
                 with self.assertRaises(SystemExit) as cm:
                     list_pods_for_completion()
                 self.assertEqual(cm.exception.code, 0)
-                mock_print.assert_called_once_with("test-pod test-rs")
+                mock_print.assert_called_once_with("test-pod test-rs ReplicaSet")
                 # Verify the correct namespace was used
                 self.mock_v1.list_namespaced_pod.assert_called_once_with(
                     "test-namespace"

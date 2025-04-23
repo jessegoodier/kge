@@ -246,7 +246,11 @@ class TestCLI(unittest.TestCase):
 
         # Mock the list_namespaced_event response
         mock_event = MagicMock()
-        mock_event.involved_object.name = "test-rs"
+        mock_involved_object = MagicMock()
+        mock_involved_object.name = "test-rs"
+        mock_involved_object.kind = "ReplicaSet"
+        mock_involved_object.__str__ = lambda: "test-rs ReplicaSet"
+        mock_event.involved_object = mock_involved_object
         mock_v1.list_namespaced_event.return_value.items = [mock_event]
 
         result = get_failed_create("default")
@@ -257,7 +261,7 @@ class TestCLI(unittest.TestCase):
         self.assertEqual(call_args["field_selector"], "reason=FailedCreate")
 
         # Verify the result
-        self.assertEqual(result, ["test-rs"])
+        self.assertEqual(result, ["test-rs ReplicaSet"])
 
     @patch("kge.cli.main.get_k8s_client")
     @patch("kge.cli.main.time.time")
@@ -420,6 +424,3 @@ class TestCLI(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-# def test_kge_kubectl_get_events():
-#     assert kge_kubectl_get_events is not None

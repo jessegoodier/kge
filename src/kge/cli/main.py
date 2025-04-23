@@ -158,7 +158,9 @@ def get_failed_create(namespace: str) -> List[str]:
         for event in events.items:
             # Add the name of the involved object (e.g. ReplicaSet name)
             if hasattr(event, 'involved_object') and hasattr(event.involved_object, 'name'):
-                failed_rs.append(event.involved_object.name)
+                failed_rs.append(event.involved_object.name + " " + event.involved_object.kind)
+            else:
+                failed_rs.append(event.metadata.name) # TODO: Add what kind of event it is this?
 
         # Update cache
         failed_create_cache[namespace] = (failed_rs, current_time)
@@ -191,7 +193,11 @@ def display_menu(pods: List[str]) -> None:
     console.print("  [green]e[/green]) Abnormal events for all pods")
     console.print("  [green]a[/green]) All pods, all events")
     for i, pod in enumerate(pods, 1):
-        console.print(f"[green]{i:3d}[/green]) {pod}")
+        # Check if the pod is a failed create item
+        if pod in get_failed_create(get_current_namespace()):
+            console.print(f"[green]{i:3d}[/green]) [dark_orange]{pod}[/dark_orange] [red]FailedCreate[/red]")
+        else:
+            console.print(f"[green]{i:3d}[/green]) {pod}")
     console.print("  [green]q[/green]) Quit")
 
 def get_user_selection(max_value: int) -> int:
