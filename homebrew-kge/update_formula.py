@@ -1,21 +1,27 @@
 #!/usr/bin/env python3
 """
-Update the Homebrew formula for kge-kubectl-get-events to the latest version.
+Update the Homebrew formula for kge to the latest version.
 """
 
 import sys
 import requests
+import toml
+from typing import Dict, Tuple
+from packaging.version import Version
+
+
+import subprocess
 import re
 import subprocess
 import venv
 from pathlib import Path
 
 
-def get_package_metadata(package_name):
-    """Get package metadata including download URL and SHA256."""
+def get_package_metadata(package_name: str) -> Tuple[str, str, str]:
+    """Get package metadata from PyPI including download URL and SHA256."""
     try:
-        response = requests.get(f"https://pypi.org/pypi/{package_name}/json")
-        response.raise_for_status()
+        response = requests.get(f'https://pypi.org/pypi/{package_name}/json')
+        response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
         package_info = response.json()
         
         latest_version = package_info["info"]["version"]
@@ -36,8 +42,9 @@ def get_package_metadata(package_name):
         return latest_version, sdist_url, sha256
     except requests.RequestException as e:
         print(f"Error fetching package info from PyPI: {e}")
-        sys.exit(1)
-
+        sys.exit(1)    
+        
+        
 
 def get_all_dependencies(package_name, venv_path):
     """Get all dependencies (including transitive) for a package using pip show."""
@@ -133,10 +140,31 @@ def get_resource_block(package_name):
         return None
 
 
+def get_project_info(pyproject_path: str = "pyproject.toml") -> Dict:
+    """Get project info from pyproject.toml."""
+    try:
+        with open(pyproject_path, "r") as f:
+            pyproject = toml.load(f)
+        return pyproject["project"]
+    except FileNotFoundError:
+        print(f"Error: pyproject.toml not found at {pyproject_path}")
+        sys.exit(1)
+    except KeyError as e:
+        print(f"Error: pyproject.toml is missing required key {e}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error: {e}")
+        sys.exit(1)
+
+
 def update_formula():
     """Update the formula to the latest version."""
-    package_name = "kge-kubectl-get-events"
-    formula_name = "kge"
+    project_info = get_project_info()
+    package_name = project_info["name"]
+    formula_name = re.sub(r'[^a-zA-Z0-9]', '', package_name)
+    print(f"Updating {package_name} formula: {formula_name}")
+    
+    
     formula_file = Path("homebrew-kge/Formula") / f"{formula_name}.rb"
     
     if not formula_file.exists():
@@ -201,6 +229,7 @@ def update_formula():
     formula_file.write_text(formula_content)
     
     print(f"Updated {package_name} formula to version {latest_version}")
+    
     print(f"URL: {sdist_url}")
     print(f"SHA256: {sha256}")
     print("\nAdded resources for dependencies:")
