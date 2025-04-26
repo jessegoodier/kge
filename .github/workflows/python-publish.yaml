@@ -17,31 +17,28 @@ jobs:
       url: https://pypi.org/p/kge-kubectl-get-events
     permissions:
       id-token: write  # IMPORTANT: this permission is mandatory for trusted publishing
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-          
-      - name: Install and configure Poetry
+
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install poetry
-          poetry config virtualenvs.create true
-          poetry config virtualenvs.in-project true
-          
-      - name: Install dependencies and run tests
+          pip install setuptools wheel build twine
+
+      - name: Install test dependencies and run tests
         run: |
-          poetry install --no-interaction
-          poetry check
-          # poetry run pytest
-          
-      - name: Build and publish package
+          pip install -e ".[test]"
+          # pytest
+
+      - name: Build package
         run: |
-          poetry build
-          
+          python -m build
+
       - name: Publish package distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1

@@ -1,0 +1,41 @@
+[project]
+name = "kge-kubectl-get-events"
+version = "0.9.0"
+description = "Kubernetes utility for viewing pod and failed replicaset events"
+authors = [ {name = "Jesse Goodier", email = "31039225+jessegoodier@users.noreply.github.com"} ]
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.13,<4.0"
+dependencies = [
+    "rich>=13.7.0,<14.0.0",
+    "kubernetes>=32.0.1,<33.0.0"
+]
+keywords = ["kubernetes", "troubleshooting", "kubectl", "events", "pod", "replicaset", "failed", "event"]
+dynamic = ["classifiers", "optional-dependencies"]
+
+[project.urls]
+Homepage = "https://github.com/jessegoodier/kge"
+Repository = "https://github.com/jessegoodier/kge"
+Documentation = "https://github.com/jessegoodier/kge/blob/main/README.md"
+"Bug Tracker" = "https://github.com/jessegoodier/kge/issues"
+
+[project.scripts]
+kge = "kge.cli.main:main"
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel", "tomli>=2.0.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["kge*"]
+exclude = ["tests*", "tests.*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+python_classes = ["Test*"]
