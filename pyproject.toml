@@ -1,11 +1,11 @@
 [project]
 name = "kge-kubectl-get-events"
-version = "0.9.0"
+version = "0.9.2"
 description = "Kubernetes utility for viewing pod and failed replicaset events"
 authors = [ {name = "Jesse Goodier", email = "31039225+jessegoodier@users.noreply.github.com"} ]
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.13,<4.0"
+requires-python = ">=3.11,<4.0"
 dependencies = [
     "rich>=13.7.0,<14.0.0",
     "kubernetes>=32.0.1,<33.0.0"
