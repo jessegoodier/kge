@@ -56,6 +56,35 @@ class TestCLI(unittest.TestCase):
         self.assertIn("Normal", result)
         self.assertIn("Created", result)
         self.assertIn("Test message", result)
+        # Verify relative timestamp is shown by default
+        self.assertIn("ago", result)
+
+    @patch("kge.cli.main.get_k8s_client")
+    def test_get_events_for_pod_with_timestamps(self, mock_get_client):
+        mock_v1 = MagicMock()
+        mock_get_client.return_value = self._mock_k8s_response(mock_v1)
+
+        # Mock the list_namespaced_event response
+        mock_event = MagicMock()
+        mock_event.type = "Normal"
+        mock_event.last_timestamp = "2023-01-01T00:00:00Z"
+        mock_event.reason = "Created"
+        mock_event.message = "Test message"
+        mock_v1.list_namespaced_event.return_value.items = [mock_event]
+
+        result = get_events_for_pod("default", "test-pod", show_timestamps=True)
+
+        # Verify the field selector
+        mock_v1.list_namespaced_event.assert_called_once()
+        call_args = mock_v1.list_namespaced_event.call_args[1]
+        self.assertEqual(call_args["field_selector"], "involvedObject.name=test-pod")
+
+        # Verify the output format
+        self.assertIn("Normal", result)
+        self.assertIn("Created", result)
+        self.assertIn("Test message", result)
+        # Verify absolute timestamp is shown
+        self.assertIn("2023-01-01T00:00:00Z", result)
 
     @patch("kge.cli.main.get_k8s_client")
     def test_get_all_events(self, mock_get_client):

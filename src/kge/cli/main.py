@@ -128,7 +128,7 @@ def get_pods(namespace: str) -> List[str]:
         console.print(f"[red]Error fetching pods: {e}[/red]")
         sys.exit(1)
 
-def get_events_for_pod(namespace: str, pod: str, non_normal: bool = False) -> str:
+def get_events_for_pod(namespace: str, pod: str, non_normal: bool = False, show_timestamps: bool = False) -> str:
     """Get events for a specific pod."""
     try:
         debug_print(f"Getting events for pod {pod} in namespace {namespace}")
@@ -143,7 +143,7 @@ def get_events_for_pod(namespace: str, pod: str, non_normal: bool = False) -> st
             field_selector=field_selector
         )
         debug_print(f"Found {len(events.items)} events")
-        return format_events(events)
+        return format_events(events, show_timestamps)
     except client.ApiException as e:
         debug_print(f"Error details while fetching events: {e}")
         console.print(f"Error fetching events: {e}")
@@ -205,7 +205,7 @@ def get_failed_create(namespace: str) -> List[Dict[str, str]]:
         console.print(f"[red]Error fetching failed create events in namespace '{namespace}': {str(e)}[/red]")
         return []
 
-def get_all_events(namespace: str, non_normal: bool = False) -> str:
+def get_all_events(namespace: str, non_normal: bool = False, show_timestamps: bool = False) -> str:
     """Get all events in the namespace."""
     try:
         v1 = get_k8s_client()
@@ -213,22 +213,52 @@ def get_all_events(namespace: str, non_normal: bool = False) -> str:
         if non_normal:
             field_selector = "type!=Normal"
         events = v1.list_namespaced_event(namespace, field_selector=field_selector)
-        return format_events(events)
+        return format_events(events, show_timestamps)
     except client.ApiException as e:
         console.print(f"Error fetching events: {e}")
         sys.exit(1)
 
-def format_events(events) -> str:
+def format_events(events, show_timestamps: bool = False) -> str:
     """Format events into a readable string with color."""
     if not events.items:
         return "[yellow]No events found[/yellow]"
 
+    # Sort events by timestamp in ascending order (oldest first)
+    sorted_events = sorted(events.items, key=lambda x: x.last_timestamp)
+
     output = []
-    for event in events.items:
+    for event in sorted_events:
         # Color based on event type
         color = "green" if event.type == "Normal" else "red"
+        
+        # Format timestamp
+        if show_timestamps:
+            timestamp = event.last_timestamp
+        else:
+            # Convert to relative time
+            from datetime import datetime
+            from datetime import timezone
+            
+            if isinstance(event.last_timestamp, str):
+                event_time = datetime.strptime(event.last_timestamp, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+            else:
+                event_time = event.last_timestamp
+            now = datetime.now(timezone.utc)
+            delta = now - event_time
+            
+            if delta.days > 0:
+                timestamp = f"{delta.days}d ago"
+            elif delta.seconds >= 3600:
+                hours = delta.seconds // 3600
+                timestamp = f"{hours}h ago"
+            elif delta.seconds >= 60:
+                minutes = delta.seconds // 60
+                timestamp = f"{minutes}m ago"
+            else:
+                timestamp = f"{delta.seconds}s ago"
+        
         output.append(
-            f"[cyan]{event.last_timestamp}[/cyan] "
+            f"[cyan]{timestamp}[/cyan] "
             f"[{color}]{event.type}[/{color}] "
             f"{event.involved_object.name} "
             f"[yellow]{event.reason}[/yellow]: "
@@ -463,6 +493,9 @@ Suggested usage:
         "--debug", action="store_true", help="Enable debug output"
     )
     parser.add_argument(
+        "--show-timestamps", action="store_true", help="Show absolute timestamps instead of relative times"
+    )
+    parser.add_argument(
         "--complete-ns", action="store_true", help=argparse.SUPPRESS
     )
     parser.add_argument(
@@ -539,7 +572,7 @@ Suggested usage:
                 events = v1.list_namespaced_event(
                     namespace, field_selector=field_selector
                 )
-                console.print(format_events(events))
+                console.print(format_events(events, args.show_timestamps))
                 sys.exit(0)
             except Exception as e:
                 console.print(f"[red]Error getting events: {e}[/red]")
@@ -579,7 +612,7 @@ Suggested usage:
         console.print(f"[cyan]Getting events for all pods[/cyan]")
         console.print(f"[cyan]{'-' * 40}[/cyan]")
         try:
-            events = get_all_events(namespace, args.exceptions_only)
+            events = get_all_events(namespace, args.exceptions_only, args.show_timestamps)
             console.print(events)
             sys.exit(0)
         except Exception as e:
@@ -606,7 +639,7 @@ Suggested usage:
         console.print(f"\n[cyan]Getting non-normal events for all pods[/cyan]")
         console.print(f"[cyan]{'-' * 40}[/cyan]")
         try:
-            events = get_all_events(namespace, non_normal=True)
+            events = get_all_events(namespace, non_normal=True, show_timestamps=args.show_timestamps)
             console.print(events)
         except Exception as e:
             console.print(f"[red]Error getting events: {e}[/red]")
@@ -614,7 +647,7 @@ Suggested usage:
         console.print(f"\n[cyan]Getting events for all pods[/cyan]")
         console.print(f"[cyan]{'-' * 40}[/cyan]")
         try:
-            events = get_all_events(namespace, args.exceptions_only)
+            events = get_all_events(namespace, args.exceptions_only, show_timestamps=args.show_timestamps)
             console.print(events)
         except Exception as e:
             console.print(f"[red]Error getting events: {e}[/red]")
@@ -623,7 +656,7 @@ Suggested usage:
         console.print(f"\n[cyan]Getting events for pod: {selected_pod}[/cyan]")
         console.print(f"[cyan]{'-' * 40}[/cyan]")
         try:
-            events = get_events_for_pod(namespace, selected_pod, args.exceptions_only)
+            events = get_events_for_pod(namespace, selected_pod, args.exceptions_only, show_timestamps=args.show_timestamps)
             console.print(events)
         except Exception as e:
             console.print(f"[red]Error getting events: {e}[/red]")

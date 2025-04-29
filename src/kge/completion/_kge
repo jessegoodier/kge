@@ -14,6 +14,7 @@ _kge() {
         '(-a --all)'{-a,--all}'[Get events for all pods]' \
         '(-k --kind)'{-k,--kind}'[List all unique kinds from events]:kind:->kinds' \
         '(-v --version)'{-v,--version}'[Show version information]' \
+        '--show-timestamps[Show absolute timestamps instead of relative times]' \
         '*:pod:->pods'
 
     case $state in
