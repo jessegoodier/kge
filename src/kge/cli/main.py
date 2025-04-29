@@ -38,10 +38,10 @@ def test_k8s_connection():
     except Exception as e:
         if e.status == 401:
             console.print("[red]Error: Unauthorized access to Kubernetes cluster[/red]")
-            console.print(f"[yellow]Please ensure you have valid credentials and proper access to the namespace '{namespace}'[/yellow]")
+            console.print(f"[yellow]Please ensure you have valid credentials and proper access to the cluster[/yellow]")
         elif e.status == 403:
             console.print("[red]Error: Forbidden access to Kubernetes cluster[/red]")
-            console.print(f"[yellow]Please ensure you have valid credentials and proper access to the namespace '{namespace}'[/yellow]")
+            console.print(f"[yellow]Please ensure you have valid credentials and proper access to the cluster[/yellow]")
         elif e.status == 111:
             console.print("[red]Error: Connection refused to Kubernetes cluster[/red]")
             console.print("[yellow]Please ensure your cluster is running and accessible[/yellow]")
@@ -127,10 +127,11 @@ def get_events_for_pod(namespace: str, pod: str, non_normal: bool = False) -> st
         console.print(f"Error fetching events: {e}")
         sys.exit(1)
 
+# TODO: This use this instead of pod specific events
 def get_abnormal_events(namespace: str) -> List[Dict[str, str]]:
     """Get list of abnormal events in the given namespace."""
     v1 = get_k8s_client()
-    events = v1.list_namespaced_event(namespace, field_selector="reason=FailedCreate")
+    events = v1.list_namespaced_event(namespace, field_selector="type!=Normal")
     return [event for event in events.items if not is_resource_healthy(namespace, event.involved_object.name, event.involved_object.kind)]
 
 def get_failed_create(namespace: str) -> List[Dict[str, str]]:

@@ -14,7 +14,7 @@ spec:
       labels:
         app: missing-configmap
     spec:
-      serviceAccountName: missing-sa
+      serviceAccountName: default
       containers:
       - name: missing-configmap
         image: nginx:latest
@@ -22,7 +22,7 @@ spec:
         - containerPort: 8080
           protocol: TCP
         volumeMounts:
-        - name: missing-configmap
+        - name: fixed-volume
           mountPath: /etc/nginx/conf.d
       volumes:
       - name: fixed-volume

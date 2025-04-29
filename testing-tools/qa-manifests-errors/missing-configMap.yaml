@@ -14,7 +14,6 @@ spec:
       labels:
         app: missing-configmap
     spec:
-      serviceAccountName: missing-sa
       containers:
       - name: missing-configmap
         image: nginx:latest
