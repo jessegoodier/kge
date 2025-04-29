@@ -202,7 +202,7 @@ def get_failed_create(namespace: str) -> List[Dict[str, str]]:
         return failed_create_items
     except Exception as e:
         debug_print(f"Error details while fetching failed create items: {e}")
-        console.print(f"[red]Error fetching ReplicaSet: {name} in namespace '{namespace}': {str(e)}[/red]")
+        console.print(f"[red]Error fetching failed create events in namespace '{namespace}': {str(e)}[/red]")
         return []
 
 def get_all_events(namespace: str, non_normal: bool = False) -> str:
