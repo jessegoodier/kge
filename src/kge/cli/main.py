@@ -20,9 +20,12 @@ def get_version():
 console = Console()
 
 # Cache duration for pods and failed creates
-CACHE_DURATION = 0
+CACHE_DURATION = int(os.getenv('KGE_CACHE_DURATION', '7'))  # Default 7 seconds
 pod_cache: Dict[str, tuple[List[str], float]] = {}
 failed_create_cache: Dict[str, tuple[List[Dict[str, str]], float]] = {}
+
+# Add health check cache
+health_check_cache: Dict[str, tuple[bool, float]] = {}
 
 # Version information
 VERSION = get_version()
@@ -134,13 +137,14 @@ def get_events_for_pod(namespace: str, pod: str, non_normal: bool = False, show_
         debug_print(f"Getting events for pod {pod} in namespace {namespace}")
         debug_print(f"Non-normal events only: {non_normal}")
         v1 = get_k8s_client()
-        field_selector = f"involvedObject.name={pod}"
+        field_selector = f"involvedObject.name={pod},involvedObject.kind=Pod"
         if non_normal:
             field_selector += ",type!=Normal"
         debug_print(f"Using field selector: {field_selector}")
         events = v1.list_namespaced_event(
             namespace,
-            field_selector=field_selector
+            field_selector=field_selector,
+            limit=100  # Limit to 100 events to improve performance
         )
         debug_print(f"Found {len(events.items)} events")
         return format_events(events, show_timestamps)
@@ -212,7 +216,11 @@ def get_all_events(namespace: str, non_normal: bool = False, show_timestamps: bo
         field_selector = None
         if non_normal:
             field_selector = "type!=Normal"
-        events = v1.list_namespaced_event(namespace, field_selector=field_selector)
+        events = v1.list_namespaced_event(
+            namespace, 
+            field_selector=field_selector,
+            limit=100  # Limit to 100 events to improve performance
+        )
         return format_events(events, show_timestamps)
     except client.ApiException as e:
         console.print(f"Error fetching events: {e}")
@@ -268,47 +276,59 @@ def format_events(events, show_timestamps: bool = False) -> str:
 
 def is_resource_healthy(namespace: str, name: str, kind: str) -> bool:
     """Check if a Kubernetes resource is healthy."""
+    cache_key = f"{namespace}/{kind}/{name}"
+    current_time = time.time()
+    
+    # Check cache first
+    if cache_key in health_check_cache:
+        cached_result, cache_time = health_check_cache[cache_key]
+        if current_time - cache_time < CACHE_DURATION:
+            debug_print(f"Using cached health check for {cache_key}")
+            return cached_result
+
     debug_print(f"Checking health of {name} {kind} in namespace {namespace}")
     try:
         if kind == "ReplicaSet":
             debug_print(f"Checking health of ReplicaSet {name} in namespace {namespace}")
             apps_v1 = get_k8s_apps_client()
             rs = apps_v1.read_namespaced_replica_set(name, namespace)
+            is_healthy = False
             if rs.status.ready_replicas == rs.status.replicas:
                 debug_print(f"ReplicaSet {name} in namespace {namespace} is healthy")
-                return True
+                is_healthy = True
             elif hasattr(rs.status, 'unavailable_replicas') and rs.status.unavailable_replicas == 0:
                 debug_print(f"ReplicaSet {name} in namespace {namespace} unavailable_replicas=0")
-                return True
+                is_healthy = True
             else:
                 if hasattr(rs.metadata, 'owner_references') and rs.metadata.owner_references:
                     debug_print(f"ReplicaSet {name} in namespace {namespace} has owner references")
                     owner = rs.metadata.owner_references[0]
-                    return is_resource_healthy(namespace, owner.name, owner.kind)
+                    is_healthy = is_resource_healthy(namespace, owner.name, owner.kind)
                 else:
                     debug_print(f"ReplicaSet {name} in namespace {namespace} has no owner references")
-                    return False
+                    is_healthy = False
         elif kind == "Deployment":
             debug_print(f"Checking health of Deployment {name} in namespace {namespace}")
             apps_v1 = get_k8s_apps_client()
             deployment = apps_v1.read_namespaced_deployment(name, namespace)
-            if deployment.status.unavailable_replicas > 0:
-                debug_print(f"Deployment {name} has unavailable replicas")
-                return False
-            return deployment.status.ready_replicas == deployment.status.replicas
+            is_healthy = deployment.status.unavailable_replicas == 0 and deployment.status.ready_replicas == deployment.status.replicas
         elif kind == "StatefulSet":
             debug_print(f"Checking health of StatefulSet {name} in namespace {namespace}")
             apps_v1 = get_k8s_apps_client()
             sts = apps_v1.read_namespaced_stateful_set(name, namespace)
-            return sts.status.ready_replicas == sts.status.replicas
+            is_healthy = sts.status.ready_replicas == sts.status.replicas
         elif kind == "Pod":
             debug_print(f"Checking health of Pod {name} in namespace {namespace}")
             v1 = get_k8s_client()
             pod = v1.read_namespaced_pod(name, namespace)
-            return pod.status.phase == "Running"
+            is_healthy = pod.status.phase == "Running"
         else:
             debug_print(f"Unknown resource kind: {kind}, assuming healthy")
-            return True
+            is_healthy = True
+
+        # Update cache
+        health_check_cache[cache_key] = (is_healthy, current_time)
+        return is_healthy
     except Exception as e:
         debug_print(f"Error checking health of {name} {kind}: {e}")
         if not hasattr(e, 'status'):
