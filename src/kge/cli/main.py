@@ -2,7 +2,6 @@ import sys
 import time
 import argparse
 from typing import List, Dict
-from functools import lru_cache
 from kubernetes import client, config
 from rich.console import Console
 from rich.style import Style
@@ -10,6 +9,7 @@ import os
 
 from kge.completion import install_completion
 
+from functools import lru_cache
 def get_version():
     """Get the version from the package."""
     from kge import __version__
@@ -20,9 +20,12 @@ def get_version():
 console = Console()
 
 # Cache duration for pods and failed creates
-CACHE_DURATION = 0
+CACHE_DURATION = int(os.getenv('KGE_CACHE_DURATION', '7'))  # Default 7 seconds
 pod_cache: Dict[str, tuple[List[str], float]] = {}
-failed_create_cache: Dict[str, tuple[List[Dict[str, str]], float]] = {}
+failures_cache: Dict[str, tuple[List[Dict[str, str]], float]] = {}
+
+# Add health check cache
+health_check_cache: Dict[str, tuple[bool, float]] = {}
 
 # Version information
 VERSION = get_version()
@@ -35,11 +38,34 @@ def debug_print(*args, **kwargs):
     if DEBUG:
         console.print("[dim]DEBUG:[/dim]", *args, **kwargs)
 
+@lru_cache(maxsize=1)
+def load_k8s_config():
+    """Load and cache the Kubernetes config."""
+    try:
+        debug_print("Loading Kubernetes config...")
+        config.load_kube_config()
+        debug_print("Successfully loaded Kubernetes config")
+    except Exception as e:
+        debug_print(f"Error details while loading config: {e}")
+        console.print(f"[red]Error loading Kubernetes config: {e}[/red]")
+        sys.exit(1)
+
+@lru_cache(maxsize=1)
+def get_k8s_client():
+    """Initialize and return a Kubernetes client."""
+    load_k8s_config()
+    return client.CoreV1Api()
+
+@lru_cache(maxsize=1)
+def get_k8s_apps_client():
+    """Initialize and return a Kubernetes AppsV1Api client."""
+    load_k8s_config()
+    return client.AppsV1Api()
+
 def test_k8s_connection():
     """Test the connection to the Kubernetes cluster."""
     try:
         debug_print("Testing Kubernetes connection...")
-        get_k8s_client()
         v1 = get_k8s_client()
         namespaces = v1.list_namespace()
         debug_print("Successfully connected to Kubernetes cluster")
@@ -57,37 +83,6 @@ def test_k8s_connection():
         else:
             console.print(f"[red]Error connecting to Kubernetes: {e}[/red]")
         sys.exit(1)
-
-def get_k8s_client():
-    """Initialize and return a Kubernetes client."""
-    try:
-        debug_print("Loading Kubernetes config...")
-        config.load_kube_config()
-        debug_print("Successfully loaded Kubernetes config")
-        return client.CoreV1Api()
-    except Exception as e:
-        debug_print(f"Error details while initializing client: {e}")
-        if "MaxRetryError" in str(e):
-            console.print("[red]Error: Unable to connect to Kubernetes cluster[/red]")
-            console.print("[yellow]Please ensure that:[/yellow]")
-            console.print("  1. Your Kubernetes cluster is running")
-            console.print("  2. You have valid kubeconfig credentials")
-            console.print("  3. The cluster is accessible from your network")
-            console.print("  4. The API server is responding")
-            console.print(f"\nDetailed error: {e}")
-        else:
-            console.print(f"[red]Error initializing Kubernetes client: {e}[/red]")
-        sys.exit(1)
-
-def get_k8s_apps_client():
-    """Initialize and return a Kubernetes AppsV1Api client."""
-    try:
-        config.load_kube_config()
-        return client.AppsV1Api()
-    except Exception as e:
-        console.print(f"Error initializing Kubernetes Apps client: {e}")
-        sys.exit(1)
-
 
 @lru_cache(maxsize=1)
 def get_current_namespace() -> str:
@@ -140,7 +135,8 @@ def get_events_for_pod(namespace: str, pod: str, non_normal: bool = False, show_
         debug_print(f"Using field selector: {field_selector}")
         events = v1.list_namespaced_event(
             namespace,
-            field_selector=field_selector
+            field_selector=field_selector,
+            limit=100  # Limit to 100 events to improve performance
         )
         debug_print(f"Found {len(events.items)} events")
         return format_events(events, show_timestamps)
@@ -156,23 +152,23 @@ def get_abnormal_events(namespace: str) -> List[Dict[str, str]]:
     events = v1.list_namespaced_event(namespace, field_selector="type!=Normal")
     return [event for event in events.items if not is_resource_healthy(namespace, event.involved_object.name, event.involved_object.kind)]
 
-def get_failed_create(namespace: str) -> List[Dict[str, str]]:
+def get_failures(namespace: str) -> List[Dict[str, str]]:
     """Get list of things that failed to create in the given namespace."""
     current_time = time.time()
-    debug_print(f"Getting failed create items for namespace: {namespace}")
+    debug_print(f"Getting failed items for namespace: {namespace}")
 
     # Check cache
-    if namespace in failed_create_cache:
-        cached_failed_rs, cache_time = failed_create_cache[namespace]
+    if namespace in failures_cache:
+        cached_failures, cache_time = failures_cache[namespace]
         if current_time - cache_time < CACHE_DURATION:
-            debug_print(f"Using cached failed create items for namespace {namespace}")
-            return cached_failed_rs
+            debug_print(f"Using cached failed items for namespace {namespace}")
+            return cached_failures
 
     try:
-        debug_print(f"Fetching fresh failed create data for namespace {namespace}")
+        debug_print(f"Fetching fresh failed items data for namespace {namespace}")
         v1 = get_k8s_client()
         events = v1.list_namespaced_event(namespace)
-        failed_create_items = []
+        failed_items = []
         for event in events.items:
             if hasattr(event, 'involved_object') and hasattr(event.involved_object, 'name'):
                 debug_print(f"Processing event: {event.reason}")
@@ -181,7 +177,7 @@ def get_failed_create(namespace: str) -> List[Dict[str, str]]:
                     kind = event.involved_object.kind
                     if not is_resource_healthy(namespace, name, kind):
                         debug_print(f"Found {event.reason}: {name} {kind} {namespace}")
-                        failed_create_items.append({
+                        failed_items.append({
                             "name": name,
                             "kind": kind,
                             "namespace": namespace,
@@ -189,20 +185,20 @@ def get_failed_create(namespace: str) -> List[Dict[str, str]]:
                         })
             else:
                 debug_print(f"Event without involved object: {event.metadata.name}")
-                failed_create_items.append({
+                failed_items.append({
                     "name": event.metadata.name,
                     "kind": "Unknown",
                     "namespace": namespace,
                     "reason": event.reason
                 })
 
-        debug_print(f"Found {len(failed_create_items)} failed create items")
+        debug_print(f"Found {len(failed_items)} failed items")
         # Update cache
-        failed_create_cache[namespace] = (failed_create_items, current_time)
-        return failed_create_items
+        failures_cache[namespace] = (failed_items, current_time)
+        return failed_items
     except Exception as e:
-        debug_print(f"Error details while fetching failed create items: {e}")
-        console.print(f"[red]Error fetching failed create events in namespace '{namespace}': {str(e)}[/red]")
+        debug_print(f"Error details while fetching failed items: {e}")
+        console.print(f"[red]Error fetching failed events in namespace '{namespace}': {str(e)}[/red]")
         return []
 
 def get_all_events(namespace: str, non_normal: bool = False, show_timestamps: bool = False) -> str:
@@ -212,7 +208,11 @@ def get_all_events(namespace: str, non_normal: bool = False, show_timestamps: bo
         field_selector = None
         if non_normal:
             field_selector = "type!=Normal"
-        events = v1.list_namespaced_event(namespace, field_selector=field_selector)
+        events = v1.list_namespaced_event(
+            namespace, 
+            field_selector=field_selector,
+            limit=100  # Limit to 100 events to improve performance
+        )
         return format_events(events, show_timestamps)
     except client.ApiException as e:
         console.print(f"Error fetching events: {e}")
@@ -268,47 +268,59 @@ def format_events(events, show_timestamps: bool = False) -> str:
 
 def is_resource_healthy(namespace: str, name: str, kind: str) -> bool:
     """Check if a Kubernetes resource is healthy."""
+    cache_key = f"{namespace}/{kind}/{name}"
+    current_time = time.time()
+    
+    # Check cache first
+    if cache_key in health_check_cache:
+        cached_result, cache_time = health_check_cache[cache_key]
+        if current_time - cache_time < CACHE_DURATION:
+            debug_print(f"Using cached health check for {cache_key}")
+            return cached_result
+
     debug_print(f"Checking health of {name} {kind} in namespace {namespace}")
     try:
         if kind == "ReplicaSet":
             debug_print(f"Checking health of ReplicaSet {name} in namespace {namespace}")
             apps_v1 = get_k8s_apps_client()
             rs = apps_v1.read_namespaced_replica_set(name, namespace)
+            is_healthy = False
             if rs.status.ready_replicas == rs.status.replicas:
                 debug_print(f"ReplicaSet {name} in namespace {namespace} is healthy")
-                return True
+                is_healthy = True
             elif hasattr(rs.status, 'unavailable_replicas') and rs.status.unavailable_replicas == 0:
                 debug_print(f"ReplicaSet {name} in namespace {namespace} unavailable_replicas=0")
-                return True
+                is_healthy = True
             else:
                 if hasattr(rs.metadata, 'owner_references') and rs.metadata.owner_references:
                     debug_print(f"ReplicaSet {name} in namespace {namespace} has owner references")
                     owner = rs.metadata.owner_references[0]
-                    return is_resource_healthy(namespace, owner.name, owner.kind)
+                    is_healthy = is_resource_healthy(namespace, owner.name, owner.kind)
                 else:
                     debug_print(f"ReplicaSet {name} in namespace {namespace} has no owner references")
-                    return False
+                    is_healthy = False
         elif kind == "Deployment":
             debug_print(f"Checking health of Deployment {name} in namespace {namespace}")
             apps_v1 = get_k8s_apps_client()
             deployment = apps_v1.read_namespaced_deployment(name, namespace)
-            if deployment.status.unavailable_replicas > 0:
-                debug_print(f"Deployment {name} has unavailable replicas")
-                return False
-            return deployment.status.ready_replicas == deployment.status.replicas
+            is_healthy = deployment.status.unavailable_replicas == 0 and deployment.status.ready_replicas == deployment.status.replicas
         elif kind == "StatefulSet":
             debug_print(f"Checking health of StatefulSet {name} in namespace {namespace}")
             apps_v1 = get_k8s_apps_client()
             sts = apps_v1.read_namespaced_stateful_set(name, namespace)
-            return sts.status.ready_replicas == sts.status.replicas
+            is_healthy = sts.status.ready_replicas == sts.status.replicas
         elif kind == "Pod":
             debug_print(f"Checking health of Pod {name} in namespace {namespace}")
             v1 = get_k8s_client()
             pod = v1.read_namespaced_pod(name, namespace)
-            return pod.status.phase == "Running"
+            is_healthy = pod.status.phase == "Running"
         else:
             debug_print(f"Unknown resource kind: {kind}, assuming healthy")
-            return True
+            is_healthy = True
+
+        # Update cache
+        health_check_cache[cache_key] = (is_healthy, current_time)
+        return is_healthy
     except Exception as e:
         debug_print(f"Error checking health of {name} {kind}: {e}")
         if not hasattr(e, 'status'):
@@ -332,9 +344,10 @@ def list_pods_for_completion():
         namespace = get_current_namespace()
 
     pods = get_pods(namespace)
-    failed_create = get_failed_create(namespace)
-    pods.extend([item["name"] for item in failed_create])
-    print(" ".join(pods))
+    failures = get_failures(namespace)
+    # Combine pod names and failed items
+    all_items = pods + [item["name"] for item in failures]
+    print(" ".join(all_items))
     sys.exit(0)
 
 def display_menu(pods: List[str]) -> None:
@@ -342,12 +355,12 @@ def display_menu(pods: List[str]) -> None:
     console.print("[cyan]Select a pod:[/cyan]")
     console.print("  [green]e[/green]) Abnormal events for all pods")
     console.print("  [green]a[/green]) All pods, all events")
-    failed_items = get_failed_create(get_current_namespace())
+    failed_items = get_failures(get_current_namespace())
     for i, pod in enumerate(pods, 1):
-        # Check if the pod is a failed create item
+        # Check if the pod is a failed item
         failed_item = next((item for item in failed_items if item["name"] == pod), None)
         if failed_item:
-            console.print(f"[green]{i:3d}[/green]) [dark_orange]{pod}[/dark_orange] [red]{failed_item['reason']}[/red]")
+            console.print(f"[green]{i:3d}[/green]) {pod} [red]{failed_item['reason']}[/red]")
         else:
             console.print(f"[green]{i:3d}[/green]) {pod}")
     console.print("  [green]q[/green]) Quit")
@@ -422,6 +435,7 @@ def list_kinds_for_completion():
     print(" ".join(kinds))
     sys.exit(0)
 
+@lru_cache(maxsize=32)
 def get_resources_of_kind(namespace: str, kind: str) -> List[str]:
     """Get list of resources of a specific kind in the namespace."""
     try:
@@ -622,11 +636,11 @@ Suggested usage:
     # Normal interactive execution
     console.print(f"[cyan]Fetching pods...[/cyan]")
     pods = get_pods(namespace)
-    failed_create = get_failed_create(namespace)
+    failures = get_failures(namespace)
     # Use a set to ensure uniqueness
     # TODO: check if this is WAI
     all_pods = set(pods)
-    all_pods.update([item["name"] for item in failed_create])
+    all_pods.update([item["name"] for item in failures])
     pods = sorted(list(all_pods))  # Convert back to sorted list for consistent display
     if not pods:
         console.print(f"[yellow]No pods found in namespace {namespace}[/yellow]")
