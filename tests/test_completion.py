@@ -37,6 +37,11 @@ class TestCompletion(unittest.TestCase):
         self.mock_get_failed_create = self.patcher_get_failed_create.start()
         self.mock_get_failed_create.return_value = [{"name": "test-rs", "kind": "ReplicaSet", "namespace": "default"}]
 
+        # Mock get_pods
+        self.patcher_get_pods = patch("kge.cli.main.get_pods")
+        self.mock_get_pods = self.patcher_get_pods.start()
+        self.mock_get_pods.return_value = ["test-pod"]
+
     def _mock_k8s_response(self, mock_v1):
         """Helper method to mock Kubernetes API response headers to avoid deprecation warnings."""
         mock_response = MagicMock()
@@ -48,6 +53,7 @@ class TestCompletion(unittest.TestCase):
         self.patcher_config.stop()
         self.patcher_client.stop()
         self.patcher_get_failed_create.stop()
+        self.patcher_get_pods.stop()
 
     def test_list_namespaces_for_completion(self):
         # Mock the namespace list
@@ -82,11 +88,6 @@ class TestCompletion(unittest.TestCase):
             mock_print.assert_called_once_with("test-pod test-rs")
 
     def test_list_pods_for_completion_specific_namespace(self):
-        # Mock the pod list
-        mock_pod = MagicMock()
-        mock_pod.metadata.name = "test-pod"
-        self.mock_v1.list_namespaced_pod.return_value.items = [mock_pod]
-
         # Mock command line arguments and print
         with patch("sys.argv", ["kge", "--complete-pod", "-n", "test-namespace"]):
             with patch("builtins.print") as mock_print:
@@ -95,10 +96,7 @@ class TestCompletion(unittest.TestCase):
                 self.assertEqual(cm.exception.code, 0)
                 mock_print.assert_called_once_with("test-pod test-rs")
                 # Verify the correct namespace was used
-                self.mock_v1.list_namespaced_pod.assert_called_once_with(
-                    "test-namespace"
-                )
-                # We don't need to verify list_namespaced_event since we're mocking get_failed_create directly
+                self.mock_get_pods.assert_called_once_with("test-namespace")
 
     def test_get_namespaces(self):
         # Mock the namespace list

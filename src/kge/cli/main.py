@@ -2,7 +2,6 @@ import sys
 import time
 import argparse
 from typing import List, Dict
-from functools import lru_cache
 from kubernetes import client, config
 from rich.console import Console
 from rich.style import Style
@@ -10,6 +9,7 @@ import os
 
 from kge.completion import install_completion
 
+from functools import lru_cache
 def get_version():
     """Get the version from the package."""
     from kge import __version__
@@ -38,11 +38,34 @@ def debug_print(*args, **kwargs):
     if DEBUG:
         console.print("[dim]DEBUG:[/dim]", *args, **kwargs)
 
+@lru_cache(maxsize=1)
+def load_k8s_config():
+    """Load and cache the Kubernetes config."""
+    try:
+        debug_print("Loading Kubernetes config...")
+        config.load_kube_config()
+        debug_print("Successfully loaded Kubernetes config")
+    except Exception as e:
+        debug_print(f"Error details while loading config: {e}")
+        console.print(f"[red]Error loading Kubernetes config: {e}[/red]")
+        sys.exit(1)
+
+@lru_cache(maxsize=1)
+def get_k8s_client():
+    """Initialize and return a Kubernetes client."""
+    load_k8s_config()
+    return client.CoreV1Api()
+
+@lru_cache(maxsize=1)
+def get_k8s_apps_client():
+    """Initialize and return a Kubernetes AppsV1Api client."""
+    load_k8s_config()
+    return client.AppsV1Api()
+
 def test_k8s_connection():
     """Test the connection to the Kubernetes cluster."""
     try:
         debug_print("Testing Kubernetes connection...")
-        get_k8s_client()
         v1 = get_k8s_client()
         namespaces = v1.list_namespace()
         debug_print("Successfully connected to Kubernetes cluster")
@@ -60,37 +83,6 @@ def test_k8s_connection():
         else:
             console.print(f"[red]Error connecting to Kubernetes: {e}[/red]")
         sys.exit(1)
-
-def get_k8s_client():
-    """Initialize and return a Kubernetes client."""
-    try:
-        debug_print("Loading Kubernetes config...")
-        config.load_kube_config()
-        debug_print("Successfully loaded Kubernetes config")
-        return client.CoreV1Api()
-    except Exception as e:
-        debug_print(f"Error details while initializing client: {e}")
-        if "MaxRetryError" in str(e):
-            console.print("[red]Error: Unable to connect to Kubernetes cluster[/red]")
-            console.print("[yellow]Please ensure that:[/yellow]")
-            console.print("  1. Your Kubernetes cluster is running")
-            console.print("  2. You have valid kubeconfig credentials")
-            console.print("  3. The cluster is accessible from your network")
-            console.print("  4. The API server is responding")
-            console.print(f"\nDetailed error: {e}")
-        else:
-            console.print(f"[red]Error initializing Kubernetes client: {e}[/red]")
-        sys.exit(1)
-
-def get_k8s_apps_client():
-    """Initialize and return a Kubernetes AppsV1Api client."""
-    try:
-        config.load_kube_config()
-        return client.AppsV1Api()
-    except Exception as e:
-        console.print(f"Error initializing Kubernetes Apps client: {e}")
-        sys.exit(1)
-
 
 @lru_cache(maxsize=1)
 def get_current_namespace() -> str:
@@ -137,7 +129,7 @@ def get_events_for_pod(namespace: str, pod: str, non_normal: bool = False, show_
         debug_print(f"Getting events for pod {pod} in namespace {namespace}")
         debug_print(f"Non-normal events only: {non_normal}")
         v1 = get_k8s_client()
-        field_selector = f"involvedObject.name={pod},involvedObject.kind=Pod"
+        field_selector = f"involvedObject.name={pod}"
         if non_normal:
             field_selector += ",type!=Normal"
         debug_print(f"Using field selector: {field_selector}")
@@ -353,8 +345,9 @@ def list_pods_for_completion():
 
     pods = get_pods(namespace)
     failed_create = get_failed_create(namespace)
-    pods.extend([item["name"] for item in failed_create])
-    print(" ".join(pods))
+    # Combine pod names and failed create items
+    all_items = pods + [item["name"] for item in failed_create]
+    print(" ".join(all_items))
     sys.exit(0)
 
 def display_menu(pods: List[str]) -> None:
@@ -367,7 +360,7 @@ def display_menu(pods: List[str]) -> None:
         # Check if the pod is a failed create item
         failed_item = next((item for item in failed_items if item["name"] == pod), None)
         if failed_item:
-            console.print(f"[green]{i:3d}[/green]) [dark_orange]{pod}[/dark_orange] [red]{failed_item['reason']}[/red]")
+            console.print(f"[green]{i:3d}[/green]) {pod} [red]{failed_item['reason']}[/red]")
         else:
             console.print(f"[green]{i:3d}[/green]) {pod}")
     console.print("  [green]q[/green]) Quit")
@@ -442,6 +435,7 @@ def list_kinds_for_completion():
     print(" ".join(kinds))
     sys.exit(0)
 
+@lru_cache(maxsize=32)
 def get_resources_of_kind(namespace: str, kind: str) -> List[str]:
     """Get list of resources of a specific kind in the namespace."""
     try:

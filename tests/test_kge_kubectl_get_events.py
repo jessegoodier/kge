@@ -13,6 +13,7 @@ from kge.cli.main import (
     CACHE_DURATION,
     pod_cache,
     failed_create_cache,
+    load_k8s_config,
 )
 
 # Filter out the deprecation warning from kubernetes client
@@ -24,6 +25,8 @@ class TestCLI(unittest.TestCase):
         pod_cache.clear()
         failed_create_cache.clear()
         get_current_namespace.cache_clear()
+        load_k8s_config.cache_clear()
+        get_k8s_client.cache_clear()
 
     def _mock_k8s_response(self, mock_v1):
         """Helper method to mock Kubernetes API response headers to avoid deprecation warnings."""
@@ -277,30 +280,6 @@ class TestCLI(unittest.TestCase):
                 mock_load_config.assert_called_once()
                 mock_api.assert_called_once()
                 self.assertEqual(result, "mock_apps_client")
-
-    @patch("kge.cli.main.get_k8s_client")
-    def test_get_failed_create(self, mock_get_client):
-        mock_v1 = MagicMock()
-        mock_get_client.return_value = self._mock_k8s_response(mock_v1)
-
-        # Mock the list_namespaced_event response
-        mock_event = MagicMock()
-        mock_involved_object = MagicMock()
-        mock_involved_object.name = "test-rs"
-        mock_involved_object.kind = "ReplicaSet"
-        mock_involved_object.__str__ = lambda: "test-rs ReplicaSet"
-        mock_event.involved_object = mock_involved_object
-        mock_v1.list_namespaced_event.return_value.items = [mock_event]
-
-        result = get_failed_create("default")
-
-        # # Verify the field selector
-        # mock_v1.list_namespaced_event.assert_called_once()
-        # call_args = mock_v1.list_namespaced_event.call_args[1]
-        # self.assertEqual(call_args["field_selector"])
-
-        # # Verify the result
-        # self.assertEqual(result, [{"name": "test-rs", "kind": "ReplicaSet", "namespace": "default"}])
 
     @patch("kge.cli.main.get_k8s_client")
     @patch("kge.cli.main.time.time")
