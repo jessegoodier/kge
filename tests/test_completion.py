@@ -32,10 +32,10 @@ class TestCompletion(unittest.TestCase):
         self.mock_client.CoreV1Api.return_value = self._mock_k8s_response(self.mock_v1)
         self.mock_client.AppsV1Api.return_value = self.mock_apps_v1
 
-        # Mock get_failed_create
-        self.patcher_get_failed_create = patch("kge.cli.main.get_failed_create")
-        self.mock_get_failed_create = self.patcher_get_failed_create.start()
-        self.mock_get_failed_create.return_value = [{"name": "test-rs", "kind": "ReplicaSet", "namespace": "default"}]
+        # Mock get_failures
+        self.patcher_get_failures = patch("kge.cli.main.get_failures")
+        self.mock_get_failures = self.patcher_get_failures.start()
+        self.mock_get_failures.return_value = [{"name": "test-rs", "kind": "ReplicaSet", "namespace": "default"}]
 
         # Mock get_pods
         self.patcher_get_pods = patch("kge.cli.main.get_pods")
@@ -52,7 +52,7 @@ class TestCompletion(unittest.TestCase):
     def tearDown(self):
         self.patcher_config.stop()
         self.patcher_client.stop()
-        self.patcher_get_failed_create.stop()
+        self.patcher_get_failures.stop()
         self.patcher_get_pods.stop()
 
     def test_list_namespaces_for_completion(self):

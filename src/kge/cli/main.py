@@ -22,7 +22,7 @@ console = Console()
 # Cache duration for pods and failed creates
 CACHE_DURATION = int(os.getenv('KGE_CACHE_DURATION', '7'))  # Default 7 seconds
 pod_cache: Dict[str, tuple[List[str], float]] = {}
-failed_create_cache: Dict[str, tuple[List[Dict[str, str]], float]] = {}
+failures_cache: Dict[str, tuple[List[Dict[str, str]], float]] = {}
 
 # Add health check cache
 health_check_cache: Dict[str, tuple[bool, float]] = {}
@@ -152,23 +152,23 @@ def get_abnormal_events(namespace: str) -> List[Dict[str, str]]:
     events = v1.list_namespaced_event(namespace, field_selector="type!=Normal")
     return [event for event in events.items if not is_resource_healthy(namespace, event.involved_object.name, event.involved_object.kind)]
 
-def get_failed_create(namespace: str) -> List[Dict[str, str]]:
+def get_failures(namespace: str) -> List[Dict[str, str]]:
     """Get list of things that failed to create in the given namespace."""
     current_time = time.time()
-    debug_print(f"Getting failed create items for namespace: {namespace}")
+    debug_print(f"Getting failed items for namespace: {namespace}")
 
     # Check cache
-    if namespace in failed_create_cache:
-        cached_failed_rs, cache_time = failed_create_cache[namespace]
+    if namespace in failures_cache:
+        cached_failures, cache_time = failures_cache[namespace]
         if current_time - cache_time < CACHE_DURATION:
-            debug_print(f"Using cached failed create items for namespace {namespace}")
-            return cached_failed_rs
+            debug_print(f"Using cached failed items for namespace {namespace}")
+            return cached_failures
 
     try:
-        debug_print(f"Fetching fresh failed create data for namespace {namespace}")
+        debug_print(f"Fetching fresh failed items data for namespace {namespace}")
         v1 = get_k8s_client()
         events = v1.list_namespaced_event(namespace)
-        failed_create_items = []
+        failed_items = []
         for event in events.items:
             if hasattr(event, 'involved_object') and hasattr(event.involved_object, 'name'):
                 debug_print(f"Processing event: {event.reason}")
@@ -177,7 +177,7 @@ def get_failed_create(namespace: str) -> List[Dict[str, str]]:
                     kind = event.involved_object.kind
                     if not is_resource_healthy(namespace, name, kind):
                         debug_print(f"Found {event.reason}: {name} {kind} {namespace}")
-                        failed_create_items.append({
+                        failed_items.append({
                             "name": name,
                             "kind": kind,
                             "namespace": namespace,
@@ -185,20 +185,20 @@ def get_failed_create(namespace: str) -> List[Dict[str, str]]:
                         })
             else:
                 debug_print(f"Event without involved object: {event.metadata.name}")
-                failed_create_items.append({
+                failed_items.append({
                     "name": event.metadata.name,
                     "kind": "Unknown",
                     "namespace": namespace,
                     "reason": event.reason
                 })
 
-        debug_print(f"Found {len(failed_create_items)} failed create items")
+        debug_print(f"Found {len(failed_items)} failed items")
         # Update cache
-        failed_create_cache[namespace] = (failed_create_items, current_time)
-        return failed_create_items
+        failures_cache[namespace] = (failed_items, current_time)
+        return failed_items
     except Exception as e:
-        debug_print(f"Error details while fetching failed create items: {e}")
-        console.print(f"[red]Error fetching failed create events in namespace '{namespace}': {str(e)}[/red]")
+        debug_print(f"Error details while fetching failed items: {e}")
+        console.print(f"[red]Error fetching failed events in namespace '{namespace}': {str(e)}[/red]")
         return []
 
 def get_all_events(namespace: str, non_normal: bool = False, show_timestamps: bool = False) -> str:
@@ -344,9 +344,9 @@ def list_pods_for_completion():
         namespace = get_current_namespace()
 
     pods = get_pods(namespace)
-    failed_create = get_failed_create(namespace)
-    # Combine pod names and failed create items
-    all_items = pods + [item["name"] for item in failed_create]
+    failures = get_failures(namespace)
+    # Combine pod names and failed items
+    all_items = pods + [item["name"] for item in failures]
     print(" ".join(all_items))
     sys.exit(0)
 
@@ -355,9 +355,9 @@ def display_menu(pods: List[str]) -> None:
     console.print("[cyan]Select a pod:[/cyan]")
     console.print("  [green]e[/green]) Abnormal events for all pods")
     console.print("  [green]a[/green]) All pods, all events")
-    failed_items = get_failed_create(get_current_namespace())
+    failed_items = get_failures(get_current_namespace())
     for i, pod in enumerate(pods, 1):
-        # Check if the pod is a failed create item
+        # Check if the pod is a failed item
         failed_item = next((item for item in failed_items if item["name"] == pod), None)
         if failed_item:
             console.print(f"[green]{i:3d}[/green]) {pod} [red]{failed_item['reason']}[/red]")
@@ -636,11 +636,11 @@ Suggested usage:
     # Normal interactive execution
     console.print(f"[cyan]Fetching pods...[/cyan]")
     pods = get_pods(namespace)
-    failed_create = get_failed_create(namespace)
+    failures = get_failures(namespace)
     # Use a set to ensure uniqueness
     # TODO: check if this is WAI
     all_pods = set(pods)
-    all_pods.update([item["name"] for item in failed_create])
+    all_pods.update([item["name"] for item in failures])
     pods = sorted(list(all_pods))  # Convert back to sorted list for consistent display
     if not pods:
         console.print(f"[yellow]No pods found in namespace {namespace}[/yellow]")

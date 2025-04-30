@@ -6,13 +6,13 @@ from kge.cli.main import (
     get_all_events,
     get_k8s_client,
     get_k8s_apps_client,
-    get_failed_create,
+    get_failures,
     get_pods,
     get_current_namespace,
     list_pods_for_completion,
     CACHE_DURATION,
     pod_cache,
-    failed_create_cache,
+    failures_cache,
     load_k8s_config,
 )
 
@@ -23,7 +23,7 @@ class TestCLI(unittest.TestCase):
     def setUp(self):
         # Clear caches before each test
         pod_cache.clear()
-        failed_create_cache.clear()
+        failures_cache.clear()
         get_current_namespace.cache_clear()
         load_k8s_config.cache_clear()
         get_k8s_client.cache_clear()
@@ -283,7 +283,7 @@ class TestCLI(unittest.TestCase):
 
     @patch("kge.cli.main.get_k8s_client")
     @patch("kge.cli.main.time.time")
-    def test_get_failed_create_with_caching(self, mock_time, mock_get_client):
+    def test_get_failures_with_caching(self, mock_time, mock_get_client):
         mock_v1 = MagicMock()
         mock_get_client.return_value = self._mock_k8s_response(mock_v1)
 
@@ -295,7 +295,7 @@ class TestCLI(unittest.TestCase):
         mock_v1.list_namespaced_event.return_value.items = [mock_event]
 
         # First call should hit the API
-        result1 = get_failed_create("default")
+        result1 = get_failures("default")
         mock_v1.list_namespaced_event.assert_called_once()
 
         # Reset mock call count
@@ -303,7 +303,7 @@ class TestCLI(unittest.TestCase):
 
         # Second call within cache duration should use cache
         mock_time.return_value = CACHE_DURATION - 1  # Still within cache duration
-        result2 = get_failed_create("default")
+        result2 = get_failures("default")
         mock_v1.list_namespaced_event.assert_not_called()
 
         # Verify results are the same
@@ -311,7 +311,7 @@ class TestCLI(unittest.TestCase):
 
     @patch("kge.cli.main.get_k8s_client")
     @patch("kge.cli.main.time.time")
-    def test_get_failed_create_cache_expiry(self, mock_time, mock_get_client):
+    def test_get_failures_cache_expiry(self, mock_time, mock_get_client):
         mock_v1 = MagicMock()
         mock_get_client.return_value = self._mock_k8s_response(mock_v1)
         mock_time.return_value = 0  # Set initial time
@@ -322,7 +322,7 @@ class TestCLI(unittest.TestCase):
         mock_v1.list_namespaced_event.return_value.items = [mock_event]
 
         # First call
-        result1 = get_failed_create("default")
+        result1 = get_failures("default")
         mock_v1.list_namespaced_event.assert_called_once()
 
         # Reset mock call count
@@ -332,7 +332,7 @@ class TestCLI(unittest.TestCase):
         mock_time.return_value = CACHE_DURATION + 1
 
         # Second call should hit API again due to cache expiry
-        result2 = get_failed_create("default")
+        result2 = get_failures("default")
         mock_v1.list_namespaced_event.assert_called_once()
 
         # Verify results are the same
@@ -340,7 +340,7 @@ class TestCLI(unittest.TestCase):
 
     @patch("kge.cli.main.get_k8s_client")
     @patch("kge.cli.main.time.time")
-    def test_get_failed_create_error_handling(
+    def test_get_failures_error_handling(
         self, mock_time, mock_get_client
     ):
         mock_v1 = MagicMock()
@@ -351,12 +351,12 @@ class TestCLI(unittest.TestCase):
         mock_v1.list_namespaced_event.side_effect = Exception("API Error")
 
         # Should return empty list on error
-        result = get_failed_create("default")
+        result = get_failures("default")
         self.assertEqual(result, [])
 
     @patch("kge.cli.main.get_k8s_client")
     @patch("kge.cli.main.time.time")
-    def test_get_failed_create_no_failures(self, mock_time, mock_get_client):
+    def test_get_failures_no_failures(self, mock_time, mock_get_client):
         mock_v1 = MagicMock()
         mock_get_client.return_value = self._mock_k8s_response(mock_v1)
         mock_time.return_value = 0  # Set initial time
@@ -364,75 +364,19 @@ class TestCLI(unittest.TestCase):
         # Mock empty response
         mock_v1.list_namespaced_event.return_value.items = []
 
-        # Should return empty list when no failed create
-        result = get_failed_create("default")
+        # Should return empty list when no failures
+        result = get_failures("default")
         self.assertEqual(result, [])
 
-    # @patch("kge.cli.main.get_k8s_client")
-    # @patch("kge.cli.main.time.time")
-    # def test_get_pods_with_caching(self, mock_time, mock_get_client):
-    #     mock_v1 = MagicMock()
-    #     mock_get_client.return_value = self._mock_k8s_response(mock_v1)
-    #     mock_time.return_value = 0  # Set initial time
-
-    #     # Mock the list_namespaced_pod response
-    #     mock_pod = MagicMock()
-    #     mock_pod.metadata.name = "test-pod"
-    #     mock_v1.list_namespaced_pod.return_value.items = [mock_pod]
-
-    #     # First call should hit the API
-    #     result1 = get_pods("default")
-    #     mock_v1.list_namespaced_pod.assert_called_once()
-
-    #     # Reset mock call count
-    #     mock_v1.list_namespaced_pod.reset_mock()
-
-    #     # Second call within cache duration should use cache
-    #     result2 = get_pods("default")
-    #     mock_v1.list_namespaced_pod.assert_not_called()
-
-    #     # Verify results are the same
-    #     self.assertEqual(result1, result2)
-    #     self.assertEqual(result1, ["test-pod"])
-
-    # def test_get_current_namespace_with_caching(self):
-    #     with patch(
-    #         "kge.cli.main.config.list_kube_config_contexts"
-    #     ) as mock_list_contexts:
-    #         # First call
-    #         mock_list_contexts.return_value = [
-    #             None,
-    #             {"context": {"namespace": "test-ns"}},
-    #         ]
-    #         result1 = get_current_namespace()
-    #         mock_list_contexts.assert_called_once()
-
-    #         # Reset mock call count
-    #         mock_list_contexts.reset_mock()
-
-    #         # Second call should use cache
-    #         result2 = get_current_namespace()
-    #         mock_list_contexts.assert_not_called()
-
-    #         # Verify results are the same
-    #         self.assertEqual(result1, result2)
-    #         self.assertEqual(result1, "test-ns")
-
-    #         # Clear the cache and verify it's called again
-    #         get_current_namespace.cache_clear()
-    #         result3 = get_current_namespace()
-    #         mock_list_contexts.assert_called_once()
-    #         self.assertEqual(result3, "test-ns")
-
     @patch("kge.cli.main.get_pods")
-    @patch("kge.cli.main.get_failed_create")
+    @patch("kge.cli.main.get_failures")
     @patch("kge.cli.main.get_current_namespace")
     def test_list_pods_for_completion(
-        self, mock_get_namespace, mock_get_failed_rs, mock_get_pods
+        self, mock_get_namespace, mock_get_failures, mock_get_pods
     ):
         mock_get_namespace.return_value = "default"
         mock_get_pods.return_value = ["pod1", "pod2"]
-        mock_get_failed_rs.return_value = [{"name": "rs1", "kind": "ReplicaSet", "namespace": "default"}, 
+        mock_get_failures.return_value = [{"name": "rs1", "kind": "ReplicaSet", "namespace": "default"}, 
                                          {"name": "rs2", "kind": "ReplicaSet", "namespace": "default"}]
 
         with patch("kge.cli.main.sys.exit") as mock_exit:
