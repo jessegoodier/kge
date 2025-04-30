@@ -371,15 +371,15 @@ def display_menu(pods: List[str]) -> None:
             console.print(f"[green]{i:3d}[/green]) {pod} [red]{failed_item['reason']}[/red]")
         else:
             console.print(f"[green]{i:3d}[/green]) {pod}")
-    console.print("  [green]q[/green]) Quit")
+    console.print("  [green]Enter[/green]) exit")
 
 def get_user_selection(max_value: int) -> int:
     """Get and validate user selection."""
     while True:
         try:
             selection = input(f"Enter selection: ")
-            if selection.lower() == "q":
-                console.print("\nExiting gracefully...")
+            if not selection:  # Empty input means exit
+                console.print("No selection made, exiting...")
                 sys.exit(0)
             if selection == "a":
                 return "a"
@@ -389,12 +389,12 @@ def get_user_selection(max_value: int) -> int:
             if 1 <= selection <= max_value:
                 return selection
             console.print(
-                f"Invalid selection. Please enter a number between 1 and {max_value} or q to quit"
+                f"Invalid selection. Please enter a number between 1 and {max_value} or press Enter to exit"
             )
         except ValueError:
-            console.print("Please enter a valid number, a, e or q to quit")
+            console.print("Please enter a valid number, a, e or press Enter to exit")
         except KeyboardInterrupt:
-            console.print("\nExiting gracefully...")
+            console.print("Exiting...")
             sys.exit(0)
 
 def get_namespaces() -> List[str]:

@@ -1,6 +1,6 @@
 [project]
 name = "kge-kubectl-get-events"
-version = "0.9.9"
+version = "0.9.10"
 description = "Kubernetes utility for viewing pod and failed replicaset events"
 authors = [ {name = "Jesse Goodier", email = "31039225+jessegoodier@users.noreply.github.com"} ]
 readme = "README.md"
