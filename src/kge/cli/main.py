@@ -224,7 +224,16 @@ def format_events(events, show_timestamps: bool = False) -> str:
         return "[yellow]No events found[/yellow]"
 
     # Sort events by timestamp in ascending order (oldest first)
-    sorted_events = sorted(events.items, key=lambda x: x.last_timestamp)
+    # Handle None timestamps by putting them at the end
+    from datetime import datetime, timezone
+    def get_sort_key(event):
+        if event.last_timestamp is None:
+            return datetime.max.replace(tzinfo=timezone.utc)
+        if isinstance(event.last_timestamp, str):
+            return datetime.strptime(event.last_timestamp, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        return event.last_timestamp
+
+    sorted_events = sorted(events.items, key=get_sort_key)
 
     output = []
     for event in sorted_events:
@@ -236,10 +245,9 @@ def format_events(events, show_timestamps: bool = False) -> str:
             timestamp = event.last_timestamp
         else:
             # Convert to relative time
-            from datetime import datetime
-            from datetime import timezone
-            
-            if isinstance(event.last_timestamp, str):
+            if event.last_timestamp is None:
+                timestamp = "unknown time"
+            elif isinstance(event.last_timestamp, str):
                 event_time = datetime.strptime(event.last_timestamp, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
             else:
                 event_time = event.last_timestamp
