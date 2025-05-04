@@ -211,8 +211,9 @@ def get_all_events(namespace: str, non_normal: bool = False, show_timestamps: bo
         events = v1.list_namespaced_event(
             namespace, 
             field_selector=field_selector,
-            limit=100  # Limit to 100 events to improve performance
+            limit=1000  # Limit to 1000 events to improve performance
         )
+        debug_print(f"Found {len(events.items)} events")
         return format_events(events, show_timestamps)
     except client.ApiException as e:
         console.print(f"Error fetching events: {e}")
@@ -227,6 +228,13 @@ def format_events(events, show_timestamps: bool = False) -> str:
     # Handle None timestamps by putting them at the end
     from datetime import datetime, timezone
     def get_sort_key(event):
+        # First try to use series.last_observed_time if available
+        if hasattr(event, 'series') and event.series is not None and hasattr(event.series, 'last_observed_time'):
+            debug_print(f"Event Series: {event.series}")
+            if event.series.last_observed_time is None:
+                return datetime.max.replace(tzinfo=timezone.utc)
+            return event.series.last_observed_time
+        # Fall back to last_timestamp if series is not available
         if event.last_timestamp is None:
             return datetime.max.replace(tzinfo=timezone.utc)
         if isinstance(event.last_timestamp, str):
@@ -242,15 +250,28 @@ def format_events(events, show_timestamps: bool = False) -> str:
         
         # Format timestamp
         if show_timestamps:
-            timestamp = event.last_timestamp
+            # Try to use series.last_observed_time first
+            if hasattr(event, 'series') and event.series is not None and hasattr(event.series, 'last_observed_time'):
+                timestamp = event.series.last_observed_time
+            else:
+                timestamp = event.last_timestamp
         else:
             # Convert to relative time
-            if event.last_timestamp is None:
-                timestamp = "unknown time"
-            elif isinstance(event.last_timestamp, str):
-                event_time = datetime.strptime(event.last_timestamp, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+            if hasattr(event, 'series') and event.series is not None and hasattr(event.series, 'last_observed_time'):
+                if event.series.last_observed_time is None:
+                    timestamp = "unknown time"
+                    debug_print(f"Event 'unknown time': {event.type} {event.series.last_observed_time} {event.metadata.name} {timestamp}")
+                    continue
+                event_time = event.series.last_observed_time
             else:
-                event_time = event.last_timestamp
+                if event.last_timestamp is None:
+                    timestamp = "unknown time"
+                    debug_print(f"Event 'unknown time': {event.type} {event.last_timestamp} {event.metadata.name} {timestamp}")
+                    continue
+                elif isinstance(event.last_timestamp, str):
+                    event_time = datetime.strptime(event.last_timestamp, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                else:
+                    event_time = event.last_timestamp
             now = datetime.now(timezone.utc)
             delta = now - event_time
             
@@ -267,10 +288,10 @@ def format_events(events, show_timestamps: bool = False) -> str:
         
         output.append(
             f"[cyan]{timestamp}[/cyan] "
-            f"[{color}]{event.type}[/{color}] "
-            f"{event.involved_object.name} "
-            f"[yellow]{event.reason}[/yellow]: "
-            f"{event.message}"
+            f"[yellow]{event.type}[/yellow] "
+            f"[red]{event.reason}[/red] "
+            f"[blue]{event.involved_object.kind}/{event.involved_object.name}[/blue] "
+            f"[white]{event.message}[/white]"
         )
     return "\n".join(output)
 
