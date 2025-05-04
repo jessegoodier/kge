@@ -5,6 +5,7 @@ from typing import List, Dict
 from kubernetes import client, config
 from rich.console import Console
 from rich.style import Style
+import rich.box
 import os
 
 from kge.completion import install_completion
@@ -139,7 +140,7 @@ def get_events_for_pod(namespace: str, pod: str, non_normal: bool = False, show_
             limit=100  # Limit to 100 events to improve performance
         )
         debug_print(f"Found {len(events.items)} events")
-        return format_events(events, show_timestamps)
+        return events
     except client.ApiException as e:
         debug_print(f"Error details while fetching events: {e}")
         console.print(f"Error fetching events: {e}")
@@ -214,12 +215,12 @@ def get_all_events(namespace: str, non_normal: bool = False, show_timestamps: bo
             limit=1000  # Limit to 1000 events to improve performance
         )
         debug_print(f"Found {len(events.items)} events")
-        return format_events(events, show_timestamps)
+        return events
     except client.ApiException as e:
         console.print(f"Error fetching events: {e}")
         sys.exit(1)
 
-def format_events(events, show_timestamps: bool = False) -> str:
+def format_events(events, show_timestamps: bool = False, text_format: bool = False) -> str:
     """Format events into a readable string with color."""
     if not events.items:
         return "[yellow]No events found[/yellow]"
@@ -243,57 +244,123 @@ def format_events(events, show_timestamps: bool = False) -> str:
 
     sorted_events = sorted(events.items, key=get_sort_key)
 
-    output = []
-    for event in sorted_events:
-        # Color based on event type
-        color = "green" if event.type == "Normal" else "red"
-        
-        # Format timestamp
-        if show_timestamps:
-            # Try to use series.last_observed_time first
-            if hasattr(event, 'series') and event.series is not None and hasattr(event.series, 'last_observed_time'):
-                timestamp = event.series.last_observed_time
-            else:
-                timestamp = event.last_timestamp
-        else:
-            # Convert to relative time
-            if hasattr(event, 'series') and event.series is not None and hasattr(event.series, 'last_observed_time'):
-                if event.series.last_observed_time is None:
-                    timestamp = "unknown time"
-                    debug_print(f"Event 'unknown time': {event.type} {event.series.last_observed_time} {event.metadata.name} {timestamp}")
-                    continue
-                event_time = event.series.last_observed_time
-            else:
-                if event.last_timestamp is None:
-                    timestamp = "unknown time"
-                    debug_print(f"Event 'unknown time': {event.type} {event.last_timestamp} {event.metadata.name} {timestamp}")
-                    continue
-                elif isinstance(event.last_timestamp, str):
-                    event_time = datetime.strptime(event.last_timestamp, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-                else:
-                    event_time = event.last_timestamp
-            now = datetime.now(timezone.utc)
-            delta = now - event_time
+    if text_format:
+        output = []
+        for event in sorted_events:
+            # Color based on event type
+            color = "green" if event.type == "Normal" else "red"
             
-            if delta.days > 0:
-                timestamp = f"{delta.days}d ago"
-            elif delta.seconds >= 3600:
-                hours = delta.seconds // 3600
-                timestamp = f"{hours}h ago"
-            elif delta.seconds >= 60:
-                minutes = delta.seconds // 60
-                timestamp = f"{minutes}m ago"
+            # Format timestamp
+            if show_timestamps:
+                # Try to use series.last_observed_time first
+                if hasattr(event, 'series') and event.series is not None and hasattr(event.series, 'last_observed_time'):
+                    timestamp = event.series.last_observed_time
+                else:
+                    timestamp = event.last_timestamp
             else:
-                timestamp = f"{delta.seconds}s ago"
+                # Convert to relative time
+                if hasattr(event, 'series') and event.series is not None and hasattr(event.series, 'last_observed_time'):
+                    if event.series.last_observed_time is None:
+                        timestamp = "unknown time"
+                        debug_print(f"Event 'unknown time': {event.type} {event.series.last_observed_time} {event.metadata.name} {timestamp}")
+                        continue
+                    event_time = event.series.last_observed_time
+                else:
+                    if event.last_timestamp is None:
+                        timestamp = "unknown time"
+                        debug_print(f"Event 'unknown time': {event.type} {event.last_timestamp} {event.metadata.name} {timestamp}")
+                        continue
+                    elif isinstance(event.last_timestamp, str):
+                        event_time = datetime.strptime(event.last_timestamp, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                    else:
+                        event_time = event.last_timestamp
+                now = datetime.now(timezone.utc)
+                delta = now - event_time
+                
+                if delta.days > 0:
+                    timestamp = f"{delta.days}d ago"
+                elif delta.seconds >= 3600:
+                    hours = delta.seconds // 3600
+                    timestamp = f"{hours}h ago"
+                elif delta.seconds >= 60:
+                    minutes = delta.seconds // 60
+                    timestamp = f"{minutes}m ago"
+                else:
+                    timestamp = f"{delta.seconds}s ago"
+            
+            output.append(
+                f"[cyan]{timestamp}[/cyan] "
+                f"[yellow]{event.type}[/yellow] "
+                f"[red]{event.reason}[/red] "
+                f"[blue]{event.involved_object.kind}/{event.involved_object.name}[/blue] "
+                f"[white]{event.message}[/white]"
+            )
+        return "\n".join(output)
+    else:
+        from rich.table import Table
+        from rich.console import Console
+        from rich.text import Text
         
-        output.append(
-            f"[cyan]{timestamp}[/cyan] "
-            f"[yellow]{event.type}[/yellow] "
-            f"[red]{event.reason}[/red] "
-            f"[blue]{event.involved_object.kind}/{event.involved_object.name}[/blue] "
-            f"[white]{event.message}[/white]"
+        table = Table(
+            show_header=True,
+            header_style="bold magenta",
+            box=rich.box.ROUNDED,
+            show_lines=True,
+            padding=(0, 1),
+            border_style="white",
+            style="dim"
         )
-    return "\n".join(output)
+        table.add_column("Time", no_wrap=True, style="cyan")
+        table.add_column("Type", no_wrap=True, style="yellow")
+        table.add_column("Reason", no_wrap=True, style="red")
+        table.add_column("Resource", no_wrap=True, style="blue")
+        table.add_column("Message", style="white")
+
+        for event in sorted_events:
+            # Format timestamp
+            if show_timestamps:
+                if hasattr(event, 'series') and event.series is not None and hasattr(event.series, 'last_observed_time'):
+                    timestamp = event.series.last_observed_time
+                else:
+                    timestamp = event.last_timestamp
+            else:
+                if hasattr(event, 'series') and event.series is not None and hasattr(event.series, 'last_observed_time'):
+                    if event.series.last_observed_time is None:
+                        timestamp = "unknown time"
+                        continue
+                    event_time = event.series.last_observed_time
+                else:
+                    if event.last_timestamp is None:
+                        timestamp = "unknown time"
+                        continue
+                    elif isinstance(event.last_timestamp, str):
+                        event_time = datetime.strptime(event.last_timestamp, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                    else:
+                        event_time = event.last_timestamp
+                now = datetime.now(timezone.utc)
+                delta = now - event_time
+                
+                if delta.days > 0:
+                    timestamp = f"{delta.days}d ago"
+                elif delta.seconds >= 3600:
+                    hours = delta.seconds // 3600
+                    timestamp = f"{hours}h ago"
+                elif delta.seconds >= 60:
+                    minutes = delta.seconds // 60
+                    timestamp = f"{minutes}m ago"
+                else:
+                    timestamp = f"{delta.seconds}s ago"
+
+            table.add_row(
+                Text(timestamp, style="cyan"),
+                Text(event.type, style="yellow"),
+                Text(event.reason, style="red"),
+                Text(f"{event.involved_object.kind}/{event.involved_object.name}", style="blue"),
+                Text(event.message, style="white")
+            )
+        
+        console.print(table)
+        return ""
 
 def is_resource_healthy(namespace: str, name: str, kind: str) -> bool:
     """Check if a Kubernetes resource is healthy."""
@@ -539,6 +606,9 @@ Suggested usage:
         "--show-timestamps", action="store_true", help="Show absolute timestamps instead of relative times"
     )
     parser.add_argument(
+        "--text", action="store_true", help="Display output in text format instead of table"
+    )
+    parser.add_argument(
         "--complete-ns", action="store_true", help=argparse.SUPPRESS
     )
     parser.add_argument(
@@ -615,7 +685,7 @@ Suggested usage:
                 events = v1.list_namespaced_event(
                     namespace, field_selector=field_selector
                 )
-                console.print(format_events(events, args.show_timestamps))
+                console.print(format_events(events, args.show_timestamps, args.text))
                 sys.exit(0)
             except Exception as e:
                 console.print(f"[red]Error getting events: {e}[/red]")
@@ -644,7 +714,7 @@ Suggested usage:
         console.print(f"[cyan]{'-' * 40}[/cyan]")
         try:
             events = get_events_for_pod(namespace, args.pod, args.exceptions_only)
-            console.print(events)
+            console.print(format_events(events, args.show_timestamps, args.text))
             sys.exit(0)
         except Exception as e:
             console.print(f"[red]Error getting events: {e}[/red]")
@@ -656,7 +726,7 @@ Suggested usage:
         console.print(f"[cyan]{'-' * 40}[/cyan]")
         try:
             events = get_all_events(namespace, args.exceptions_only, args.show_timestamps)
-            console.print(events)
+            console.print(format_events(events, args.show_timestamps, args.text))
             sys.exit(0)
         except Exception as e:
             console.print(f"[red]Error getting events: {e}[/red]")
@@ -683,7 +753,7 @@ Suggested usage:
         console.print(f"[cyan]{'-' * 40}[/cyan]")
         try:
             events = get_all_events(namespace, non_normal=True, show_timestamps=args.show_timestamps)
-            console.print(events)
+            console.print(format_events(events, args.show_timestamps, args.text))
         except Exception as e:
             console.print(f"[red]Error getting events: {e}[/red]")
     elif selection == "a":  # All events for all pods
@@ -691,7 +761,7 @@ Suggested usage:
         console.print(f"[cyan]{'-' * 40}[/cyan]")
         try:
             events = get_all_events(namespace, args.exceptions_only, show_timestamps=args.show_timestamps)
-            console.print(events)
+            console.print(format_events(events, args.show_timestamps, args.text))
         except Exception as e:
             console.print(f"[red]Error getting events: {e}[/red]")
     else:  # Events for specific pod
@@ -700,7 +770,7 @@ Suggested usage:
         console.print(f"[cyan]{'-' * 40}[/cyan]")
         try:
             events = get_events_for_pod(namespace, selected_pod, args.exceptions_only, show_timestamps=args.show_timestamps)
-            console.print(events)
+            console.print(format_events(events, args.show_timestamps, args.text))
         except Exception as e:
             console.print(f"[red]Error getting events: {e}[/red]")
 
