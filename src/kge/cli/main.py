@@ -722,7 +722,7 @@ Suggested usage:
 
     # Handle -a flag for all events
     if args.all:
-        console.print(f"[cyan]Getting events for all pods[/cyan]")
+        console.print(f"[cyan]Getting all events[/cyan]")
         console.print(f"[cyan]{'-' * 40}[/cyan]")
         try:
             events = get_all_events(namespace, args.exceptions_only, args.show_timestamps)
@@ -756,8 +756,8 @@ Suggested usage:
             console.print(format_events(events, args.show_timestamps, args.text))
         except Exception as e:
             console.print(f"[red]Error getting events: {e}[/red]")
-    elif selection == "a":  # All events for all pods
-        console.print(f"\n[cyan]Getting events for all pods[/cyan]")
+    elif selection == "a":
+        console.print(f"\n[cyan]Getting all events[/cyan]")
         console.print(f"[cyan]{'-' * 40}[/cyan]")
         try:
             events = get_all_events(namespace, args.exceptions_only, show_timestamps=args.show_timestamps)
