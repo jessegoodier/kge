@@ -1,8 +1,9 @@
 #! /usr/bin/env python3
+import json
 import re
 import subprocess
 import argparse
-
+import requests
 
 def find_github_version():
     # Get latest release version from GitHub
@@ -23,6 +24,23 @@ def find_github_version():
     except Exception as e:
         print(f"Error: {e}")
         exit(1)
+
+def find_pypi_version(github_version):
+    try:
+        # Get latest version from PyPI
+        # https://pypi.org/pypi/kge-kubectl-get-events/json
+        pypi_url = f"https://pypi.org/pypi/kge-kubectl-get-events/json"
+        pypi_response = requests.get(pypi_url)
+        pypi_json = pypi_response.json()
+        if pypi_json:
+            pypi_version = pypi_json["info"]["version"]
+            if pypi_version == github_version:
+                return True
+            else:
+                return False
+    except Exception as e:
+        print(f"Error in find_pypi_version: {e}")
+        return False
 
 
 def check_version_match(version):
@@ -269,6 +287,9 @@ def main():
             print(f"Latest version on GitHub: {current_version}")
         else:
             print("No releases found on GitHub")
+            exit(1)
+        if not find_pypi_version(current_version):
+            print(f"Error: GitHub version {current_version} does not match PyPI version\nThis must be fixed manually before releasing")
             exit(1)
         # Update version
         new_version = get_new_version(current_version, bump_type=bump_type, commit=args.commit)
