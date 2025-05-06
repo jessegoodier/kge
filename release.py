@@ -87,6 +87,8 @@ def create_release(version, commit):
             if git_commit.returncode != 0:
                 print(f"Error: Failed to commit changes to git")
                 exit(1)
+            # Check version match
+            check_version_match(version)
             # Create release
             release_command = [
                 "gh",
@@ -109,7 +111,7 @@ def create_release(version, commit):
         exit(1)
 
 
-def update_version(current_version, bump_type, commit=False):
+def get_new_version(current_version, bump_type, commit=False):
     try:
         print(f"Bumping {bump_type} version from {current_version}")
         # Increment version
@@ -265,9 +267,7 @@ def main():
             print("No releases found on GitHub")
             exit(1)
         # Update version
-        new_version = update_version(current_version, bump_type=bump_type, commit=args.commit)
-        # Check version match
-        check_version_match(new_version)
+        new_version = get_new_version(current_version, bump_type=bump_type, commit=args.commit)
         # Create release
         create_release(new_version, args.commit)
     except Exception as e:
