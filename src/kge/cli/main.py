@@ -4,16 +4,18 @@ import argparse
 from typing import List, Dict
 from kubernetes import client, config
 from rich.console import Console
-from rich.style import Style
 import rich.box
 import os
 
 from kge.completion import install_completion
 
 from functools import lru_cache
+
+
 def get_version():
     """Get the version from the package."""
     from kge import __version__
+
     return __version__
 
 
@@ -21,7 +23,7 @@ def get_version():
 console = Console()
 
 # Cache duration for pods and failed creates
-CACHE_DURATION = int(os.getenv('KGE_CACHE_DURATION', '7'))  # Default 7 seconds
+CACHE_DURATION = int(os.getenv("KGE_CACHE_DURATION", "7"))  # Default 7 seconds
 pod_cache: Dict[str, tuple[List[str], float]] = {}
 failures_cache: Dict[str, tuple[List[Dict[str, str]], float]] = {}
 
@@ -34,10 +36,12 @@ VERSION = get_version()
 # Debug flag
 DEBUG = False
 
+
 def debug_print(*args, **kwargs):
     """Print debug messages only if debug mode is enabled."""
     if DEBUG:
         console.print("[dim]DEBUG:[/dim]", *args, **kwargs)
+
 
 @lru_cache(maxsize=1)
 def load_k8s_config():
@@ -51,11 +55,13 @@ def load_k8s_config():
         console.print(f"[red]Error loading Kubernetes config: {e}[/red]")
         sys.exit(1)
 
+
 @lru_cache(maxsize=1)
 def get_k8s_client():
     """Initialize and return a Kubernetes client."""
     load_k8s_config()
     return client.CoreV1Api()
+
 
 @lru_cache(maxsize=1)
 def get_k8s_apps_client():
@@ -63,27 +69,42 @@ def get_k8s_apps_client():
     load_k8s_config()
     return client.AppsV1Api()
 
+
 def test_k8s_connection():
     """Test the connection to the Kubernetes cluster."""
     try:
         debug_print("Testing Kubernetes connection...")
         v1 = get_k8s_client()
         namespaces = v1.list_namespace()
+        debug_print(f"Found {len(namespaces.items)} namespaces")
         debug_print("Successfully connected to Kubernetes cluster")
     except Exception as e:
         debug_print(f"Connection error details: {e}")
         if e.status == 401:
             console.print("[red]Error: Unauthorized access to Kubernetes cluster[/red]")
-            console.print(f"[yellow]Please ensure you have valid credentials and proper access to the cluster[/yellow]")
+            console.print(
+                f"""[yellow]{e.status}:
+                Please ensure you have valid credentials to the cluster
+                \n{e.reason}[/yellow]"""
+            )
         elif e.status == 403:
             console.print("[red]Error: Forbidden access to Kubernetes cluster[/red]")
-            console.print(f"[yellow]Please ensure you have valid credentials and proper access to the cluster[/yellow]")
+            console.print(
+                f"""[yellow]{e.status}:
+                Please ensure you have valid credentials to the cluster
+                \n{e.reason}[/yellow]"""
+            )
         elif e.status == 111:
             console.print("[red]Error: Connection refused to Kubernetes cluster[/red]")
-            console.print("[yellow]Please ensure your cluster is running and accessible[/yellow]")
+            console.print(
+                f"""[yellow]{e.status}:
+                Please ensure your cluster is running and accessible
+                \n{e.reason}[/yellow]"""
+            )
         else:
             console.print(f"[red]Error connecting to Kubernetes: {e}[/red]")
         sys.exit(1)
+
 
 @lru_cache(maxsize=1)
 def get_current_namespace() -> str:
@@ -124,7 +145,10 @@ def get_pods(namespace: str) -> List[str]:
         console.print(f"[red]Error fetching pods: {e}[/red]")
         sys.exit(1)
 
-def get_events_for_pod(namespace: str, pod: str, non_normal: bool = False, show_timestamps: bool = False) -> str:
+
+def get_events_for_pod(
+    namespace: str, pod: str, non_normal: bool = False, show_timestamps: bool = False
+) -> str:
     """Get events for a specific pod."""
     try:
         debug_print(f"Getting events for pod {pod} in namespace {namespace}")
@@ -137,7 +161,7 @@ def get_events_for_pod(namespace: str, pod: str, non_normal: bool = False, show_
         events = v1.list_namespaced_event(
             namespace,
             field_selector=field_selector,
-            limit=100  # Limit to 100 events to improve performance
+            limit=100,  # Limit to 100 events to improve performance
         )
         debug_print(f"Found {len(events.items)} events")
         return events
@@ -146,12 +170,20 @@ def get_events_for_pod(namespace: str, pod: str, non_normal: bool = False, show_
         console.print(f"Error fetching events: {e}")
         sys.exit(1)
 
+
 # TODO: This use this instead of pod specific events
 def get_abnormal_events(namespace: str) -> List[Dict[str, str]]:
     """Get list of abnormal events in the given namespace."""
     v1 = get_k8s_client()
     events = v1.list_namespaced_event(namespace, field_selector="type!=Normal")
-    return [event for event in events.items if not is_resource_healthy(namespace, event.involved_object.name, event.involved_object.kind)]
+    return [
+        event
+        for event in events.items
+        if not is_resource_healthy(
+            namespace, event.involved_object.name, event.involved_object.kind
+        )
+    ]
+
 
 def get_failures(namespace: str) -> List[Dict[str, str]]:
     """Get list of things that failed to create in the given namespace."""
@@ -171,27 +203,33 @@ def get_failures(namespace: str) -> List[Dict[str, str]]:
         events = v1.list_namespaced_event(namespace)
         failed_items = []
         for event in events.items:
-            if hasattr(event, 'involved_object') and hasattr(event.involved_object, 'name'):
+            if hasattr(event, "involved_object") and hasattr(
+                event.involved_object, "name"
+            ):
                 debug_print(f"Processing event: {event.reason}")
                 if "failed" in event.reason.lower():
                     name = event.involved_object.name
                     kind = event.involved_object.kind
                     if not is_resource_healthy(namespace, name, kind):
                         debug_print(f"Found {event.reason}: {name} {kind} {namespace}")
-                        failed_items.append({
-                            "name": name,
-                            "kind": kind,
-                            "namespace": namespace,
-                            "reason": event.reason
-                        })
+                        failed_items.append(
+                            {
+                                "name": name,
+                                "kind": kind,
+                                "namespace": namespace,
+                                "reason": event.reason,
+                            }
+                        )
             else:
                 debug_print(f"Event without involved object: {event.metadata.name}")
-                failed_items.append({
-                    "name": event.metadata.name,
-                    "kind": "Unknown",
-                    "namespace": namespace,
-                    "reason": event.reason
-                })
+                failed_items.append(
+                    {
+                        "name": event.metadata.name,
+                        "kind": "Unknown",
+                        "namespace": namespace,
+                        "reason": event.reason,
+                    }
+                )
 
         debug_print(f"Found {len(failed_items)} failed items")
         # Update cache
@@ -199,10 +237,16 @@ def get_failures(namespace: str) -> List[Dict[str, str]]:
         return failed_items
     except Exception as e:
         debug_print(f"Error details while fetching failed items: {e}")
-        console.print(f"[red]Error fetching failed events in namespace '{namespace}': {str(e)}[/red]")
+        console.print(
+            f"""[red]Error fetching failed events in namespace '{namespace}':
+            \n{str(e)}[/red]"""
+        )
         return []
 
-def get_all_events(namespace: str, non_normal: bool = False, show_timestamps: bool = False) -> str:
+
+def get_all_events(
+    namespace: str, non_normal: bool = False, show_timestamps: bool = False
+) -> str:
     """Get all events in the namespace."""
     try:
         v1 = get_k8s_client()
@@ -210,9 +254,9 @@ def get_all_events(namespace: str, non_normal: bool = False, show_timestamps: bo
         if non_normal:
             field_selector = "type!=Normal"
         events = v1.list_namespaced_event(
-            namespace, 
+            namespace,
             field_selector=field_selector,
-            limit=1000  # Limit to 1000 events to improve performance
+            limit=1000,  # Limit to 1000 events to improve performance
         )
         debug_print(f"Found {len(events.items)} events")
         return events
@@ -220,7 +264,10 @@ def get_all_events(namespace: str, non_normal: bool = False, show_timestamps: bo
         console.print(f"Error fetching events: {e}")
         sys.exit(1)
 
-def format_events(events, show_timestamps: bool = False, text_format: bool = False) -> str:
+
+def format_events(
+    events, show_timestamps: bool = False, text_format: bool = False
+) -> str:
     """Format events into a readable string with color."""
     if not events.items:
         return "[yellow]No events found[/yellow]"
@@ -228,9 +275,14 @@ def format_events(events, show_timestamps: bool = False, text_format: bool = Fal
     # Sort events by timestamp in ascending order (oldest first)
     # Handle None timestamps by putting them at the end
     from datetime import datetime, timezone
+
     def get_sort_key(event):
         # First try to use series.last_observed_time if available
-        if hasattr(event, 'series') and event.series is not None and hasattr(event.series, 'last_observed_time'):
+        if (
+            hasattr(event, "series")
+            and event.series is not None
+            and hasattr(event.series, "last_observed_time")
+        ):
             debug_print(f"Event Series: {event.series}")
             if event.series.last_observed_time is None:
                 return datetime.max.replace(tzinfo=timezone.utc)
@@ -239,7 +291,9 @@ def format_events(events, show_timestamps: bool = False, text_format: bool = Fal
         if event.last_timestamp is None:
             return datetime.max.replace(tzinfo=timezone.utc)
         if isinstance(event.last_timestamp, str):
-            return datetime.strptime(event.last_timestamp, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+            return datetime.strptime(
+                event.last_timestamp, "%Y-%m-%dT%H:%M:%SZ"
+            ).replace(tzinfo=timezone.utc)
         return event.last_timestamp
 
     sorted_events = sorted(events.items, key=get_sort_key)
@@ -247,36 +301,52 @@ def format_events(events, show_timestamps: bool = False, text_format: bool = Fal
     if text_format:
         output = []
         for event in sorted_events:
-            # Color based on event type
-            color = "green" if event.type == "Normal" else "red"
-            
+
             # Format timestamp
             if show_timestamps:
                 # Try to use series.last_observed_time first
-                if hasattr(event, 'series') and event.series is not None and hasattr(event.series, 'last_observed_time'):
+                if (
+                    hasattr(event, "series")
+                    and event.series is not None
+                    and hasattr(event.series, "last_observed_time")
+                ):
                     timestamp = event.series.last_observed_time
                 else:
                     timestamp = event.last_timestamp
             else:
                 # Convert to relative time
-                if hasattr(event, 'series') and event.series is not None and hasattr(event.series, 'last_observed_time'):
+                if (
+                    hasattr(event, "series")
+                    and event.series is not None
+                    and hasattr(event.series, "last_observed_time")
+                ):
                     if event.series.last_observed_time is None:
                         timestamp = "unknown time"
-                        debug_print(f"Event 'unknown time': {event.type} {event.series.last_observed_time} {event.metadata.name} {timestamp}")
+                        debug_print(
+                            f"""Event 'unknown time':
+                            \n{event.type} {event.series.last_observed_time}
+                            \n{event.metadata.name} {timestamp}"""
+                        )
                         continue
                     event_time = event.series.last_observed_time
                 else:
                     if event.last_timestamp is None:
                         timestamp = "unknown time"
-                        debug_print(f"Event 'unknown time': {event.type} {event.last_timestamp} {event.metadata.name} {timestamp}")
+                        debug_print(
+                            f"""Event 'unknown time':
+                            \n{event.type} {event.last_timestamp}
+                            \n{event.metadata.name} {timestamp}"""
+                        )
                         continue
                     elif isinstance(event.last_timestamp, str):
-                        event_time = datetime.strptime(event.last_timestamp, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                        event_time = datetime.strptime(
+                            event.last_timestamp, "%Y-%m-%dT%H:%M:%SZ"
+                        ).replace(tzinfo=timezone.utc)
                     else:
                         event_time = event.last_timestamp
                 now = datetime.now(timezone.utc)
                 delta = now - event_time
-                
+
                 if delta.days > 0:
                     timestamp = f"{delta.days}d ago"
                 elif delta.seconds >= 3600:
@@ -287,7 +357,7 @@ def format_events(events, show_timestamps: bool = False, text_format: bool = Fal
                     timestamp = f"{minutes}m ago"
                 else:
                     timestamp = f"{delta.seconds}s ago"
-            
+
             output.append(
                 f"[cyan]{timestamp}[/cyan] "
                 f"[yellow]{event.type}[/yellow] "
@@ -298,9 +368,8 @@ def format_events(events, show_timestamps: bool = False, text_format: bool = Fal
         return "\n".join(output)
     else:
         from rich.table import Table
-        from rich.console import Console
         from rich.text import Text
-        
+
         table = Table(
             show_header=True,
             header_style="bold magenta",
@@ -308,7 +377,7 @@ def format_events(events, show_timestamps: bool = False, text_format: bool = Fal
             show_lines=True,
             padding=(0, 1),
             border_style="white",
-            style="dim"
+            style="dim",
         )
         table.add_column("Time", no_wrap=True, style="cyan")
         table.add_column("Type", no_wrap=True, style="yellow")
@@ -319,12 +388,20 @@ def format_events(events, show_timestamps: bool = False, text_format: bool = Fal
         for event in sorted_events:
             # Format timestamp
             if show_timestamps:
-                if hasattr(event, 'series') and event.series is not None and hasattr(event.series, 'last_observed_time'):
+                if (
+                    hasattr(event, "series")
+                    and event.series is not None
+                    and hasattr(event.series, "last_observed_time")
+                ):
                     timestamp = event.series.last_observed_time
                 else:
                     timestamp = event.last_timestamp
             else:
-                if hasattr(event, 'series') and event.series is not None and hasattr(event.series, 'last_observed_time'):
+                if (
+                    hasattr(event, "series")
+                    and event.series is not None
+                    and hasattr(event.series, "last_observed_time")
+                ):
                     if event.series.last_observed_time is None:
                         timestamp = "unknown time"
                         continue
@@ -334,12 +411,14 @@ def format_events(events, show_timestamps: bool = False, text_format: bool = Fal
                         timestamp = "unknown time"
                         continue
                     elif isinstance(event.last_timestamp, str):
-                        event_time = datetime.strptime(event.last_timestamp, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                        event_time = datetime.strptime(
+                            event.last_timestamp, "%Y-%m-%dT%H:%M:%SZ"
+                        ).replace(tzinfo=timezone.utc)
                     else:
                         event_time = event.last_timestamp
                 now = datetime.now(timezone.utc)
                 delta = now - event_time
-                
+
                 if delta.days > 0:
                     timestamp = f"{delta.days}d ago"
                 elif delta.seconds >= 3600:
@@ -355,18 +434,22 @@ def format_events(events, show_timestamps: bool = False, text_format: bool = Fal
                 Text(timestamp, style="cyan"),
                 Text(event.type, style="yellow"),
                 Text(event.reason, style="red"),
-                Text(f"{event.involved_object.kind}/{event.involved_object.name}", style="blue"),
-                Text(event.message, style="white")
+                Text(
+                    f"{event.involved_object.kind}/{event.involved_object.name}",
+                    style="blue",
+                ),
+                Text(event.message, style="white"),
             )
-        
+
         console.print(table)
         return ""
+
 
 def is_resource_healthy(namespace: str, name: str, kind: str) -> bool:
     """Check if a Kubernetes resource is healthy."""
     cache_key = f"{namespace}/{kind}/{name}"
     current_time = time.time()
-    
+
     # Check cache first
     if cache_key in health_check_cache:
         cached_result, cache_time = health_check_cache[cache_key]
@@ -377,31 +460,54 @@ def is_resource_healthy(namespace: str, name: str, kind: str) -> bool:
     debug_print(f"Checking health of {name} {kind} in namespace {namespace}")
     try:
         if kind == "ReplicaSet":
-            debug_print(f"Checking health of ReplicaSet {name} in namespace {namespace}")
+            debug_print(
+                f"Checking health of ReplicaSet {name} in namespace {namespace}"
+            )
             apps_v1 = get_k8s_apps_client()
             rs = apps_v1.read_namespaced_replica_set(name, namespace)
             is_healthy = False
             if rs.status.ready_replicas == rs.status.replicas:
                 debug_print(f"ReplicaSet {name} in namespace {namespace} is healthy")
                 is_healthy = True
-            elif hasattr(rs.status, 'unavailable_replicas') and rs.status.unavailable_replicas == 0:
-                debug_print(f"ReplicaSet {name} in namespace {namespace} unavailable_replicas=0")
+            elif (
+                hasattr(rs.status, "unavailable_replicas")
+                and rs.status.unavailable_replicas == 0
+            ):
+                debug_print(
+                    f"ReplicaSet {name} in namespace {namespace} unavailable_replicas=0"
+                )
                 is_healthy = True
             else:
-                if hasattr(rs.metadata, 'owner_references') and rs.metadata.owner_references:
-                    debug_print(f"ReplicaSet {name} in namespace {namespace} has owner references")
+                if (
+                    hasattr(rs.metadata, "owner_references")
+                    and rs.metadata.owner_references
+                ):
+                    debug_print(
+                        f"ReplicaSet {name} in namespace {namespace} has owner references"
+                    )
                     owner = rs.metadata.owner_references[0]
                     is_healthy = is_resource_healthy(namespace, owner.name, owner.kind)
                 else:
-                    debug_print(f"ReplicaSet {name} in namespace {namespace} has no owner references")
+                    debug_print(
+                        f"""ReplicaSet {name} in namespace:
+                        {namespace} has no owner references
+                        \n{rs.metadata.owner_references}"""
+                    )
                     is_healthy = False
         elif kind == "Deployment":
-            debug_print(f"Checking health of Deployment {name} in namespace {namespace}")
+            debug_print(
+                f"Checking health of Deployment {name} in namespace {namespace}"
+            )
             apps_v1 = get_k8s_apps_client()
             deployment = apps_v1.read_namespaced_deployment(name, namespace)
-            is_healthy = deployment.status.unavailable_replicas == 0 and deployment.status.ready_replicas == deployment.status.replicas
+            is_healthy = (
+                deployment.status.unavailable_replicas == 0
+                and deployment.status.ready_replicas == deployment.status.replicas
+            )
         elif kind == "StatefulSet":
-            debug_print(f"Checking health of StatefulSet {name} in namespace {namespace}")
+            debug_print(
+                f"Checking health of StatefulSet {name} in namespace {namespace}"
+            )
             apps_v1 = get_k8s_apps_client()
             sts = apps_v1.read_namespaced_stateful_set(name, namespace)
             is_healthy = sts.status.ready_replicas == sts.status.replicas
@@ -419,13 +525,14 @@ def is_resource_healthy(namespace: str, name: str, kind: str) -> bool:
         return is_healthy
     except Exception as e:
         debug_print(f"Error checking health of {name} {kind}: {e}")
-        if not hasattr(e, 'status'):
+        if not hasattr(e, "status"):
             return True
         if e.status == 404:
             debug_print(f"Resource {name} {kind} not found, assuming deleted")
             return True
         debug_print(f"Error checking health of {name} {kind}: {e}")
         return False
+
 
 def list_pods_for_completion():
     """List pods for zsh completion."""
@@ -446,6 +553,7 @@ def list_pods_for_completion():
     print(" ".join(all_items))
     sys.exit(0)
 
+
 def display_menu(pods: List[str]) -> None:
     """Display numbered menu of pods with color."""
     console.print("[cyan]Select a pod:[/cyan]")
@@ -456,16 +564,19 @@ def display_menu(pods: List[str]) -> None:
         # Check if the pod is a failed item
         failed_item = next((item for item in failed_items if item["name"] == pod), None)
         if failed_item:
-            console.print(f"[green]{i:3d}[/green]) {pod} [red]{failed_item['reason']}[/red]")
+            console.print(
+                f"[green]{i:3d}[/green]) {pod} [red]{failed_item['reason']}[/red]"
+            )
         else:
             console.print(f"[green]{i:3d}[/green]) {pod}")
     console.print("  [green]Enter[/green]) exit")
+
 
 def get_user_selection(max_value: int) -> int:
     """Get and validate user selection."""
     while True:
         try:
-            selection = input(f"Enter selection: ")
+            selection = input("Enter selection: ")
             if not selection:  # Empty input means exit
                 console.print("No selection made, exiting...")
                 sys.exit(0)
@@ -477,13 +588,15 @@ def get_user_selection(max_value: int) -> int:
             if 1 <= selection <= max_value:
                 return selection
             console.print(
-                f"Invalid selection. Please enter a number between 1 and {max_value} or press Enter to exit"
+                f"""Invalid selection. Please enter a number between 1 and {max_value}
+                or press Enter to exit"""
             )
         except ValueError:
             console.print("Please enter a valid number, a, e or press Enter to exit")
         except KeyboardInterrupt:
             console.print("Exiting...")
             sys.exit(0)
+
 
 def get_namespaces() -> List[str]:
     """Get list of available namespaces."""
@@ -495,11 +608,13 @@ def get_namespaces() -> List[str]:
         console.print(f"Error fetching namespaces: {e}")
         return []
 
+
 def list_namespaces_for_completion():
     """List namespaces for zsh completion."""
     namespaces = get_namespaces()
     print(" ".join(namespaces))
     sys.exit(0)
+
 
 def get_all_kinds(namespace: str) -> List[str]:
     """Get list of all unique kinds from events in the namespace."""
@@ -508,12 +623,13 @@ def get_all_kinds(namespace: str) -> List[str]:
         events = v1.list_namespaced_event(namespace)
         kinds = set()
         for event in events.items:
-            if hasattr(event.involved_object, 'kind'):
+            if hasattr(event.involved_object, "kind"):
                 kinds.add(event.involved_object.kind)
         return sorted(list(kinds))
     except client.ApiException as e:
         console.print(f"Error fetching kinds: {e}")
         return []
+
 
 def list_kinds_for_completion():
     """List kinds for zsh completion."""
@@ -530,6 +646,7 @@ def list_kinds_for_completion():
     kinds = get_all_kinds(namespace)
     print(" ".join(kinds))
     sys.exit(0)
+
 
 @lru_cache(maxsize=32)
 def get_resources_of_kind(namespace: str, kind: str) -> List[str]:
@@ -549,6 +666,7 @@ def get_resources_of_kind(namespace: str, kind: str) -> List[str]:
     except client.ApiException as e:
         console.print(f"Error fetching resources: {e}")
         return []
+
 
 def list_resources_for_completion():
     """List resources for zsh completion."""
@@ -572,14 +690,16 @@ def list_resources_for_completion():
     print(" ".join(resources))
     sys.exit(0)
 
+
 def main():
     """Main entry point for the CLI."""
     parser = argparse.ArgumentParser(
-        description=f'''View Kubernetes events
+        description="""View Kubernetes events\n
 Suggested usage:
-[cyan]kge -ea[/cyan] to see all abnormal events in the namespace add [cyan]-n[/cyan] to specify a different namespace
-[cyan]source <(kge --completion=zsh)[/cyan] to enable zsh completion for pods and namespaces''',
-        formatter_class=argparse.RawDescriptionHelpFormatter)
+`kge -ea` to see all abnormal events
+`source <(kge --completion=zsh)` to enable zsh completion for pods and namespaces""",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument("pod", nargs="?", help="Pod name to get events for")
     parser.add_argument("-n", "--namespace", help="Namespace to use")
     parser.add_argument(
@@ -592,31 +712,29 @@ Suggested usage:
         "-a", "--all", action="store_true", help="Get events for all pods"
     )
     parser.add_argument("-k", "--kind", help="List all unique kinds from events")
-    parser.add_argument('--completion', choices=['zsh'], help="Output shell completion script")
+    parser.add_argument(
+        "--completion", choices=["zsh"], help="Output shell completion script"
+    )
     parser.add_argument(
         "--install-completion", action="store_true", help="Install shell completion"
     )
     parser.add_argument(
         "-v", "--version", action="store_true", help="Show version information"
     )
+    parser.add_argument("--debug", action="store_true", help="Enable debug output")
     parser.add_argument(
-        "--debug", action="store_true", help="Enable debug output"
+        "--show-timestamps",
+        action="store_true",
+        help="Show absolute timestamps instead of relative times",
     )
     parser.add_argument(
-        "--show-timestamps", action="store_true", help="Show absolute timestamps instead of relative times"
+        "--text",
+        action="store_true",
+        help="Display output in text format instead of table",
     )
-    parser.add_argument(
-        "--text", action="store_true", help="Display output in text format instead of table"
-    )
-    parser.add_argument(
-        "--complete-ns", action="store_true", help=argparse.SUPPRESS
-    )
-    parser.add_argument(
-        "--complete-kind", action="store_true", help=argparse.SUPPRESS
-    )
-    parser.add_argument(
-        "--complete-pod", action="store_true", help=argparse.SUPPRESS
-    )
+    parser.add_argument("--complete-ns", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--complete-kind", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--complete-pod", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument(
         "--complete-resource", action="store_true", help=argparse.SUPPRESS
     )
@@ -645,8 +763,10 @@ Suggested usage:
 
     if args.completion:
         try:
-            completion_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'completion', '_kge')
-            with open(completion_file, 'r') as f:
+            completion_file = os.path.join(
+                os.path.dirname(os.path.dirname(__file__)), "completion", "_kge"
+            )
+            with open(completion_file, "r") as f:
                 print(f.read())
             sys.exit(0)
         except Exception as e:
@@ -671,9 +791,7 @@ Suggested usage:
     if args.kind:
         # If there's a resource name argument, show events for that specific resource
         if args.pod:
-            console.print(
-                f"[cyan]Getting events for {args.kind} {args.pod}[/cyan]"
-            )
+            console.print(f"[cyan]Getting events for {args.kind} {args.pod}[/cyan]")
             console.print(f"[cyan]{'-' * 40}[/cyan]")
             try:
                 v1 = get_k8s_client()
@@ -692,7 +810,7 @@ Suggested usage:
                 sys.exit(1)
         # Otherwise, just list the kinds
         else:
-            console.print(f"[cyan]Getting all unique kinds from events[/cyan]")
+            console.print("[cyan]Getting all unique kinds from events[/cyan]")
             console.print(f"[cyan]{'-' * 40}[/cyan]")
             try:
                 kinds = get_all_kinds(namespace)
@@ -722,10 +840,12 @@ Suggested usage:
 
     # Handle -a flag for all events
     if args.all:
-        console.print(f"[cyan]Getting all events[/cyan]")
+        console.print("[cyan]Getting all events[/cyan]")
         console.print(f"[cyan]{'-' * 40}[/cyan]")
         try:
-            events = get_all_events(namespace, args.exceptions_only, args.show_timestamps)
+            events = get_all_events(
+                namespace, args.exceptions_only, args.show_timestamps
+            )
             console.print(format_events(events, args.show_timestamps, args.text))
             sys.exit(0)
         except Exception as e:
@@ -733,7 +853,7 @@ Suggested usage:
             sys.exit(1)
 
     # Normal interactive execution
-    console.print(f"[cyan]Fetching pods...[/cyan]")
+    console.print("[cyan]Fetching pods...[/cyan]")
     pods = get_pods(namespace)
     failures = get_failures(namespace)
     # Use a set to ensure uniqueness
@@ -749,18 +869,22 @@ Suggested usage:
     selection = get_user_selection(len(pods))
 
     if selection == "e":  # Non-normal events for all pods
-        console.print(f"\n[cyan]Getting non-normal events for all pods[/cyan]")
+        console.print("\n[cyan]Getting non-normal events for all pods[/cyan]")
         console.print(f"[cyan]{'-' * 40}[/cyan]")
         try:
-            events = get_all_events(namespace, non_normal=True, show_timestamps=args.show_timestamps)
+            events = get_all_events(
+                namespace, non_normal=True, show_timestamps=args.show_timestamps
+            )
             console.print(format_events(events, args.show_timestamps, args.text))
         except Exception as e:
             console.print(f"[red]Error getting events: {e}[/red]")
     elif selection == "a":
-        console.print(f"\n[cyan]Getting all events[/cyan]")
+        console.print("\n[cyan]Getting all events[/cyan]")
         console.print(f"[cyan]{'-' * 40}[/cyan]")
         try:
-            events = get_all_events(namespace, args.exceptions_only, show_timestamps=args.show_timestamps)
+            events = get_all_events(
+                namespace, args.exceptions_only, show_timestamps=args.show_timestamps
+            )
             console.print(format_events(events, args.show_timestamps, args.text))
         except Exception as e:
             console.print(f"[red]Error getting events: {e}[/red]")
@@ -769,10 +893,16 @@ Suggested usage:
         console.print(f"\n[cyan]Getting events for pod: {selected_pod}[/cyan]")
         console.print(f"[cyan]{'-' * 40}[/cyan]")
         try:
-            events = get_events_for_pod(namespace, selected_pod, args.exceptions_only, show_timestamps=args.show_timestamps)
+            events = get_events_for_pod(
+                namespace,
+                selected_pod,
+                args.exceptions_only,
+                show_timestamps=args.show_timestamps,
+            )
             console.print(format_events(events, args.show_timestamps, args.text))
         except Exception as e:
             console.print(f"[red]Error getting events: {e}[/red]")
+
 
 if __name__ == "__main__":
     try:
