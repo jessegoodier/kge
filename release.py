@@ -137,6 +137,19 @@ def update_version(current_version, bump_type):
 
 def check_git_status():
     try:
+        # Check if we're on main branch
+        current_branch = subprocess.run(
+            ["git", "branch", "--show-current"], 
+            check=True, 
+            capture_output=True, 
+            text=True
+        ).stdout.strip()
+        
+        if current_branch != "main":
+            print(f"Error: Not on main branch (currently on {current_branch})")
+            print("Please ensure your changes are merged to main before creating a release")
+            return False
+
         git_status = subprocess.run(["git", "status"], check=True, capture_output=True, text=True)
         if "Changes to be committed" in git_status.stdout:
             print("Error: There are changes to be committed")
