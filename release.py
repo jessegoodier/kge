@@ -87,6 +87,10 @@ def create_release(version, commit):
             if git_commit.returncode != 0:
                 print(f"Error: Failed to commit changes to git")
                 exit(1)
+            git_push = subprocess.run(["git", "push"], check=True)
+            if git_push.returncode != 0:
+                print(f"Error: Failed to push changes to git")
+                exit(1)
             # Check version match
             check_version_match(version)
             # Create release
