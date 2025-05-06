@@ -62,7 +62,7 @@ def check_version_match(version):
 def create_release(version, commit):
     try:
         # Check if version is already released
-        release_command = [
+        check_for_duplicate_release = [
             "gh",
             "release",
             "list",
@@ -71,22 +71,33 @@ def create_release(version, commit):
             "--jq",
             ".[].name",
         ]
-        release_list = subprocess.check_output(release_command, text=True).splitlines()
+        release_list = subprocess.check_output(check_for_duplicate_release, text=True).splitlines()
         if f"v{version}" in release_list:
             print(f"Error: Version {version} is already released")
-            return
-        # Create release
-        release_command = [
-            "gh",
-            "release",
-            "create",
-            f"v{version}",
-            "--title",
-            f"v{version}",
-            "--notes",
-            f"Release v{version}",
-        ]
+            exit(1)
+
+
         if commit:
+            # commit the changes
+            git_add = subprocess.run(["git", "add", "pyproject.toml", "src/kge/__init__.py"], check=True)
+            if git_add.returncode != 0:
+                print(f"Error: Failed to add changes to git")
+                exit(1)
+            git_commit = subprocess.run(["git", "commit", "-m", f"Bump version to {version}"], check=True)
+            if git_commit.returncode != 0:
+                print(f"Error: Failed to commit changes to git")
+                exit(1)
+            # Create release
+            release_command = [
+                "gh",
+                "release",
+                "create",
+                f"v{version}",
+                "--title",
+                f"v{version}",
+                "--notes",
+                f"Release v{version}",
+            ]
             subprocess.run(release_command, check=True)
             print(f"Release v{version} created successfully")
         else:
@@ -98,7 +109,7 @@ def create_release(version, commit):
         exit(1)
 
 
-def update_version(current_version, bump_type):
+def update_version(current_version, bump_type, commit=False):
     try:
         print(f"Bumping {bump_type} version from {current_version}")
         # Increment version
@@ -120,16 +131,18 @@ def update_version(current_version, bump_type):
         pyproject_content = re.sub(
             r'version = "(.+)"', f'version = "{new_version}"', pyproject_content
         )
-        with open("pyproject.toml", "w") as f:
-            f.write(pyproject_content)
-        # Update __init__.py
+        if commit:
+            with open("pyproject.toml", "w") as f:
+                f.write(pyproject_content)
+            # Update __init__.py
         with open("src/kge/__init__.py", "r") as f:
             init_content = f.read()
         init_content = re.sub(
             r'__version__ = "(.+)"', f'__version__ = "{new_version}"', init_content
         )
-        with open("src/kge/__init__.py", "w") as f:
-            f.write(init_content)
+        if commit:
+            with open("src/kge/__init__.py", "w") as f:
+                f.write(init_content)
         return new_version
     except Exception as e:
         print(f"Error: {e}")
@@ -252,7 +265,7 @@ def main():
             print("No releases found on GitHub")
             exit(1)
         # Update version
-        new_version = update_version(current_version, bump_type=bump_type)
+        new_version = update_version(current_version, bump_type=bump_type, commit=args.commit)
         # Check version match
         check_version_match(new_version)
         # Create release
