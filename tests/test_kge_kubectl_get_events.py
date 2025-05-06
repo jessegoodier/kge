@@ -17,6 +17,7 @@ from kge.cli.main import (
     load_k8s_config,
 )
 
+
 class TestCLIWithRealK8s(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -24,12 +25,14 @@ class TestCLIWithRealK8s(unittest.TestCase):
         # Load kube config
         config.load_kube_config()
         cls.v1 = client.CoreV1Api()
-        
+
         # Create test namespace
         cls.test_namespace = "kge-test-namespace"
         try:
             cls.v1.create_namespace(
-                client.V1Namespace(metadata=client.V1ObjectMeta(name=cls.test_namespace))
+                client.V1Namespace(
+                    metadata=client.V1ObjectMeta(name=cls.test_namespace)
+                )
             )
         except client.ApiException as e:
             if e.status != 409:  # 409 means namespace already exists
@@ -52,7 +55,7 @@ class TestCLIWithRealK8s(unittest.TestCase):
             },
         }
         cls.v1.create_namespaced_pod(cls.test_namespace, pod_manifest)
-        
+
         # Wait for pod to be ready
         for _ in range(30):  # Wait up to 30 seconds
             pod = cls.v1.read_namespaced_pod(cls.test_pod_name, cls.test_namespace)
@@ -86,7 +89,7 @@ class TestCLIWithRealK8s(unittest.TestCase):
         events = get_events_for_pod(self.test_namespace, self.test_pod_name)
         self.assertIsNotNone(events)
         self.assertGreater(len(events.items), 0)
-        
+
         # Verify event format
         event = events.items[0]
         self.assertIn(event.type, ["Normal", "Warning"])
@@ -116,20 +119,22 @@ class TestCLIWithRealK8s(unittest.TestCase):
         """Test listing pods for completion."""
         # Mock command line arguments
         import sys
+
         original_argv = sys.argv
         sys.argv = ["kge", "--complete-pod", "-n", self.test_namespace]
-        
+
         try:
             # Capture stdout
             import io
             from contextlib import redirect_stdout
+
             f = io.StringIO()
             with redirect_stdout(f):
                 with self.assertRaises(SystemExit) as cm:
                     list_pods_for_completion()
                 self.assertEqual(cm.exception.code, 0)
             output = f.getvalue().strip()
-            
+
             # Verify output contains our test pod
             self.assertIn(self.test_pod_name, output.split())
         finally:
@@ -137,10 +142,12 @@ class TestCLIWithRealK8s(unittest.TestCase):
 
     def test_get_events_for_pod_with_timestamps(self):
         """Test getting events with timestamps."""
-        events = get_events_for_pod(self.test_namespace, self.test_pod_name, show_timestamps=True)
+        events = get_events_for_pod(
+            self.test_namespace, self.test_pod_name, show_timestamps=True
+        )
         self.assertIsNotNone(events)
         self.assertGreater(len(events.items), 0)
-        
+
         # Verify timestamp format
         event = events.items[0]
         self.assertIsNotNone(event.last_timestamp)
@@ -150,10 +157,11 @@ class TestCLIWithRealK8s(unittest.TestCase):
         events = get_all_events(self.test_namespace, show_timestamps=True)
         self.assertIsNotNone(events)
         self.assertGreater(len(events.items), 0)
-        
+
         # Verify timestamp format
         event = events.items[0]
         self.assertIsNotNone(event.last_timestamp)
 
+
 if __name__ == "__main__":
-    unittest.main() 
+    unittest.main()

@@ -2,6 +2,7 @@ from setuptools import setup, find_packages
 import os
 import tomli
 
+
 def get_version():
     """Get the version from the package without importing it."""
     with open(os.path.join("src", "kge", "__init__.py"), "r") as f:
@@ -9,11 +10,13 @@ def get_version():
             if line.startswith("__version__"):
                 return line.split("=")[1].strip().strip('"')
 
+
 def get_pyproject_metadata():
     """Read metadata from pyproject.toml."""
     with open("pyproject.toml", "rb") as f:
         pyproject = tomli.load(f)
     return pyproject["project"]
+
 
 metadata = get_pyproject_metadata()
 

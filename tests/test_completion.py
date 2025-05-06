@@ -9,7 +9,10 @@ from kge.cli.main import (
 )
 
 # Filter out the deprecation warning from kubernetes client
-warnings.filterwarnings("ignore", category=DeprecationWarning, module="kubernetes.client.rest")
+warnings.filterwarnings(
+    "ignore", category=DeprecationWarning, module="kubernetes.client.rest"
+)
+
 
 class TestCompletion(unittest.TestCase):
     def setUp(self):
@@ -35,7 +38,9 @@ class TestCompletion(unittest.TestCase):
         # Mock get_failures
         self.patcher_get_failures = patch("kge.cli.main.get_failures")
         self.mock_get_failures = self.patcher_get_failures.start()
-        self.mock_get_failures.return_value = [{"name": "test-rs", "kind": "ReplicaSet", "namespace": "default"}]
+        self.mock_get_failures.return_value = [
+            {"name": "test-rs", "kind": "ReplicaSet", "namespace": "default"}
+        ]
 
         # Mock get_pods
         self.patcher_get_pods = patch("kge.cli.main.get_pods")
@@ -46,7 +51,9 @@ class TestCompletion(unittest.TestCase):
         """Helper method to mock Kubernetes API response headers to avoid deprecation warnings."""
         mock_response = MagicMock()
         mock_response.headers = {"key": "value"}
-        mock_v1.api_client.rest_client.pool_manager.connection_from_url.return_value.urlopen.return_value = mock_response
+        mock_v1.api_client.rest_client.pool_manager.connection_from_url.return_value.urlopen.return_value = (
+            mock_response
+        )
         return mock_v1
 
     def tearDown(self):
