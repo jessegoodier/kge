@@ -270,6 +270,8 @@ def main():
         else:
             print("Error: Please specify one of --patch, --minor, or --major")
             exit(1)
+        # run black to fix formatting
+        subprocess.run(["black", "src"], check=True)
         if not run_tests():
             exit(1)
         if not run_lint():

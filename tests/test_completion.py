@@ -45,7 +45,7 @@ class TestCompletion(unittest.TestCase):
         # Mock get_pods
         self.patcher_get_pods = patch("kge.cli.main.get_pods")
         self.mock_get_pods = self.patcher_get_pods.start()
-        self.mock_get_pods.return_value = ["test-pod"]
+        self.mock_get_pods.return_value = [{"name": "test-pod", "controller_kind": "Pod", "controller_name": "test-pod"}]
 
     def _mock_k8s_response(self, mock_v1):
         """Helper method to mock Kubernetes API response headers to avoid deprecation warnings."""
@@ -79,6 +79,7 @@ class TestCompletion(unittest.TestCase):
         # Mock the pod list
         mock_pod = MagicMock()
         mock_pod.metadata.name = "test-pod"
+        mock_pod.metadata.owner_references = None
         self.mock_v1.list_namespaced_pod.return_value.items = [mock_pod]
 
         # Mock the failed create events
@@ -91,6 +92,7 @@ class TestCompletion(unittest.TestCase):
         with patch("builtins.print") as mock_print:
             with self.assertRaises(SystemExit) as cm:
                 list_pods_for_completion()
+
             self.assertEqual(cm.exception.code, 0)
             mock_print.assert_called_once_with("test-pod test-rs")
 
@@ -100,6 +102,7 @@ class TestCompletion(unittest.TestCase):
             with patch("builtins.print") as mock_print:
                 with self.assertRaises(SystemExit) as cm:
                     list_pods_for_completion()
+
                 self.assertEqual(cm.exception.code, 0)
                 mock_print.assert_called_once_with("test-pod test-rs")
                 # Verify the correct namespace was used

@@ -116,41 +116,51 @@ def get_current_namespace() -> str:
     except Exception:
         return "default"
 
+
 def get_menu_items(namespace: str) -> tuple[List[Dict[str, str]], List[Dict[str, str]]]:
     console.print("[cyan]Fetching Events...[/cyan]")
     pods = get_pods(namespace)
     failures = get_failures(namespace)
-    
+
     # Create a set of pod names for quick lookup
     pod_names = {pod["name"] for pod in pods}
-    
+
     # Add failed items that aren't pods to the list
     for failure in failures:
         if failure["name"] not in pod_names:
-            pods.append({
-                "name": failure["name"],
-                "controller_kind": failure["kind"],
-                "controller_name": failure["name"]
-            })
-    
+            pods.append(
+                {
+                    "name": failure["name"],
+                    "controller_kind": failure["kind"],
+                    "controller_name": failure["name"],
+                }
+            )
+
     # Sort pods by name for consistent display
     pods = sorted(pods, key=lambda x: x["name"])
-    
+
     if not pods:
         console.print(f"[yellow]No pods found in namespace {namespace}[/yellow]")
         sys.exit(1)
     return pods, failures
+
 
 def get_top_level_controller(v1, apps_v1, namespace: str, owner_ref) -> tuple[str, str]:
     """Get the top level controller by traversing owner references."""
     if owner_ref.kind == "ReplicaSet":
         try:
             rs = apps_v1.read_namespaced_replica_set(owner_ref.name, namespace)
-            if hasattr(rs.metadata, 'owner_references') and rs.metadata.owner_references:
-                return get_top_level_controller(v1, apps_v1, namespace, rs.metadata.owner_references[0])
+            if (
+                hasattr(rs.metadata, "owner_references")
+                and rs.metadata.owner_references
+            ):
+                return get_top_level_controller(
+                    v1, apps_v1, namespace, rs.metadata.owner_references[0]
+                )
         except Exception as e:
             debug_print(f"Error getting ReplicaSet {owner_ref.name}: {e}")
     return owner_ref.kind, owner_ref.name
+
 
 def get_pods(namespace: str) -> List[Dict[str, str]]:
     """Get list of pods in the specified namespace with caching."""
@@ -174,9 +184,14 @@ def get_pods(namespace: str) -> List[Dict[str, str]]:
         for pod in pods.items:
             pod_dict = {"name": pod.metadata.name}
             # Check for controller reference
-            if hasattr(pod.metadata, 'owner_references') and pod.metadata.owner_references:
+            if (
+                hasattr(pod.metadata, "owner_references")
+                and pod.metadata.owner_references
+            ):
                 owner = pod.metadata.owner_references[0]
-                controller_kind, controller_name = get_top_level_controller(v1, apps_v1, namespace, owner)
+                controller_kind, controller_name = get_top_level_controller(
+                    v1, apps_v1, namespace, owner
+                )
                 pod_dict["controller_kind"] = controller_kind
                 pod_dict["controller_name"] = controller_name
             else:
@@ -358,9 +373,9 @@ def format_events(
                     and event.series is not None
                     and hasattr(event.series, "last_observed_time")
                 ):
-                    timestamp = event.series.last_observed_time
+                    timestamp = str(event.series.last_observed_time)
                 else:
-                    timestamp = event.last_timestamp
+                    timestamp = str(event.last_timestamp)
             else:
                 # Convert to relative time
                 if (
@@ -441,9 +456,9 @@ def format_events(
                     and event.series is not None
                     and hasattr(event.series, "last_observed_time")
                 ):
-                    timestamp = event.series.last_observed_time
+                    timestamp = str(event.series.last_observed_time)
                 else:
-                    timestamp = event.last_timestamp
+                    timestamp = str(event.last_timestamp)
             else:
                 if (
                     hasattr(event, "series")
@@ -610,7 +625,9 @@ def display_menu(pods: List[Dict[str, str]]) -> None:
     failed_items = get_failures(get_current_namespace())
     for i, pod in enumerate(pods, 1):
         # Check if the pod is a failed item
-        failed_item = next((item for item in failed_items if item["name"] == pod["name"]), None)
+        failed_item = next(
+            (item for item in failed_items if item["name"] == pod["name"]), None
+        )
         if failed_item:
             console.print(
                 f"[green]{i:3d}[/green]) {failed_item['kind']}/{pod['name']} [red]{failed_item['reason']}[/red]"
@@ -935,7 +952,7 @@ Suggested usage:
         try:
             events = get_events_for_pod(
                 namespace,
-                selected_pod['name'],
+                selected_pod["name"],
                 args.exceptions_only,
                 show_timestamps=args.show_timestamps,
             )

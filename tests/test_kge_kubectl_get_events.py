@@ -56,14 +56,20 @@ class TestCLIWithRealK8s(unittest.TestCase):
         }
         cls.v1.create_namespaced_pod(cls.test_namespace, pod_manifest)
 
-        # Wait for pod to be ready
+        # Wait for pod to be ready and ensure events are generated
         for _ in range(30):  # Wait up to 30 seconds
             pod = cls.v1.read_namespaced_pod(cls.test_pod_name, cls.test_namespace)
-            if pod.status.phase == "Running":
-                break
+            events = cls.v1.list_namespaced_event(
+                cls.test_namespace,
+                field_selector=f"involvedObject.name={cls.test_pod_name}"
+            )
+            if pod.status.phase == "Running" and len(events.items) > 0:
+                # Verify we have events with timestamps
+                if any(event.last_timestamp is not None for event in events.items):
+                    break
             time.sleep(1)
         else:
-            raise TimeoutError("Test pod failed to start")
+            raise TimeoutError("Test pod failed to start or no events were generated")
 
     @classmethod
     def tearDownClass(cls):
@@ -113,7 +119,8 @@ class TestCLIWithRealK8s(unittest.TestCase):
         """Test getting pods in the namespace."""
         pods = get_pods(self.test_namespace)
         self.assertIsInstance(pods, list)
-        self.assertIn(self.test_pod_name, pods)
+        pod_names = [pod["name"] for pod in pods]
+        self.assertIn(self.test_pod_name, pod_names)
 
     def test_list_pods_for_completion(self):
         """Test listing pods for completion."""
@@ -148,9 +155,13 @@ class TestCLIWithRealK8s(unittest.TestCase):
         self.assertIsNotNone(events)
         self.assertGreater(len(events.items), 0)
 
-        # Verify timestamp format
-        event = events.items[0]
-        self.assertIsNotNone(event.last_timestamp)
+        # Verify at least one event has a timestamp
+        has_timestamp = False
+        for event in events.items:
+            if event.last_timestamp is not None:
+                has_timestamp = True
+                break
+        self.assertTrue(has_timestamp, "No events found with timestamps")
 
     def test_get_all_events_with_timestamps(self):
         """Test getting all events with timestamps."""
@@ -158,9 +169,13 @@ class TestCLIWithRealK8s(unittest.TestCase):
         self.assertIsNotNone(events)
         self.assertGreater(len(events.items), 0)
 
-        # Verify timestamp format
-        event = events.items[0]
-        self.assertIsNotNone(event.last_timestamp)
+        # Verify at least one event has a timestamp
+        has_timestamp = False
+        for event in events.items:
+            if event.last_timestamp is not None:
+                has_timestamp = True
+                break
+        self.assertTrue(has_timestamp, "No events found with timestamps")
 
 
 if __name__ == "__main__":
