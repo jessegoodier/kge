@@ -24,7 +24,7 @@ console = Console()
 
 # Cache duration for pods and failed creates
 CACHE_DURATION = int(os.getenv("KGE_CACHE_DURATION", "7"))  # Default 7 seconds
-pod_cache: Dict[str, tuple[List[str], float]] = {}
+pod_cache: Dict[str, tuple[List[Dict[str, str]], float]] = {}
 failures_cache: Dict[str, tuple[List[Dict[str, str]], float]] = {}
 
 # Add health check cache
@@ -117,7 +117,52 @@ def get_current_namespace() -> str:
         return "default"
 
 
-def get_pods(namespace: str) -> List[str]:
+def get_menu_items(namespace: str) -> tuple[List[Dict[str, str]], List[Dict[str, str]]]:
+    console.print("[cyan]Fetching Events...[/cyan]")
+    pods = get_pods(namespace)
+    failures = get_failures(namespace)
+
+    # Create a set of pod names for quick lookup
+    pod_names = {pod["name"] for pod in pods}
+
+    # Add failed items that aren't pods to the list
+    for failure in failures:
+        if failure["name"] not in pod_names:
+            pods.append(
+                {
+                    "name": failure["name"],
+                    "controller_kind": failure["kind"],
+                    "controller_name": failure["name"],
+                }
+            )
+
+    # Sort pods by name for consistent display
+    pods = sorted(pods, key=lambda x: x["name"])
+
+    if not pods:
+        console.print(f"[yellow]No pods found in namespace {namespace}[/yellow]")
+        sys.exit(1)
+    return pods, failures
+
+
+def get_top_level_controller(v1, apps_v1, namespace: str, owner_ref) -> tuple[str, str]:
+    """Get the top level controller by traversing owner references."""
+    if owner_ref.kind == "ReplicaSet":
+        try:
+            rs = apps_v1.read_namespaced_replica_set(owner_ref.name, namespace)
+            if (
+                hasattr(rs.metadata, "owner_references")
+                and rs.metadata.owner_references
+            ):
+                return get_top_level_controller(
+                    v1, apps_v1, namespace, rs.metadata.owner_references[0]
+                )
+        except Exception as e:
+            debug_print(f"Error getting ReplicaSet {owner_ref.name}: {e}")
+    return owner_ref.kind, owner_ref.name
+
+
+def get_pods(namespace: str) -> List[Dict[str, str]]:
     """Get list of pods in the specified namespace with caching."""
     current_time = time.time()
     debug_print(f"Getting pods for namespace: {namespace}")
@@ -133,13 +178,31 @@ def get_pods(namespace: str) -> List[str]:
     try:
         debug_print(f"Fetching fresh pod data for namespace {namespace}")
         v1 = get_k8s_client()
+        apps_v1 = get_k8s_apps_client()
         pods = v1.list_namespaced_pod(namespace)
-        pod_names = [pod.metadata.name for pod in pods.items]
-        debug_print(f"Found {len(pod_names)} pods in namespace {namespace}")
+        pod_info = []
+        for pod in pods.items:
+            pod_dict = {"name": pod.metadata.name}
+            # Check for controller reference
+            if (
+                hasattr(pod.metadata, "owner_references")
+                and pod.metadata.owner_references
+            ):
+                owner = pod.metadata.owner_references[0]
+                controller_kind, controller_name = get_top_level_controller(
+                    v1, apps_v1, namespace, owner
+                )
+                pod_dict["controller_kind"] = controller_kind
+                pod_dict["controller_name"] = controller_name
+            else:
+                pod_dict["controller_kind"] = "Pod"
+                pod_dict["controller_name"] = pod.metadata.name
+            pod_info.append(pod_dict)
+        debug_print(f"Found {len(pod_info)} pods in namespace {namespace}")
 
         # Update cache
-        pod_cache[namespace] = (pod_names, current_time)
-        return pod_names
+        pod_cache[namespace] = (pod_info, current_time)
+        return pod_info
     except client.ApiException as e:
         debug_print(f"Error details while fetching pods: {e}")
         console.print(f"[red]Error fetching pods: {e}[/red]")
@@ -207,7 +270,7 @@ def get_failures(namespace: str) -> List[Dict[str, str]]:
                 event.involved_object, "name"
             ):
                 debug_print(f"Processing event: {event.reason}")
-                if "failed" in event.reason.lower():
+                if "warning" in event.type.lower():
                     name = event.involved_object.name
                     kind = event.involved_object.kind
                     if not is_resource_healthy(namespace, name, kind):
@@ -310,9 +373,9 @@ def format_events(
                     and event.series is not None
                     and hasattr(event.series, "last_observed_time")
                 ):
-                    timestamp = event.series.last_observed_time
+                    timestamp = str(event.series.last_observed_time)
                 else:
-                    timestamp = event.last_timestamp
+                    timestamp = str(event.last_timestamp)
             else:
                 # Convert to relative time
                 if (
@@ -393,9 +456,9 @@ def format_events(
                     and event.series is not None
                     and hasattr(event.series, "last_observed_time")
                 ):
-                    timestamp = event.series.last_observed_time
+                    timestamp = str(event.series.last_observed_time)
                 else:
-                    timestamp = event.last_timestamp
+                    timestamp = str(event.last_timestamp)
             else:
                 if (
                     hasattr(event, "series")
@@ -517,8 +580,8 @@ def is_resource_healthy(namespace: str, name: str, kind: str) -> bool:
             pod = v1.read_namespaced_pod(name, namespace)
             is_healthy = pod.status.phase == "Running"
         else:
-            debug_print(f"Unknown resource kind: {kind}, assuming healthy")
-            is_healthy = True
+            debug_print(f"Unknown resource kind: {kind}, assuming unhealthy")
+            is_healthy = False
 
         # Update cache
         health_check_cache[cache_key] = (is_healthy, current_time)
@@ -549,26 +612,32 @@ def list_pods_for_completion():
     pods = get_pods(namespace)
     failures = get_failures(namespace)
     # Combine pod names and failed items
-    all_items = pods + [item["name"] for item in failures]
+    pod_names = [pod["name"] for pod in pods]
+    failure_names = [item["name"] for item in failures]
+    all_items = pod_names + failure_names
     print(" ".join(all_items))
     sys.exit(0)
 
 
-def display_menu(pods: List[str]) -> None:
+def display_menu(pods: List[Dict[str, str]]) -> None:
     """Display numbered menu of pods with color."""
     console.print("[cyan]Select a pod:[/cyan]")
-    console.print("  [green]e[/green]) Abnormal events for all pods")
-    console.print("  [green]a[/green]) All pods, all events")
+    console.print("  [green]e[/green]) All abnormal events")
+    console.print("  [green]a[/green]) All events")
     failed_items = get_failures(get_current_namespace())
     for i, pod in enumerate(pods, 1):
         # Check if the pod is a failed item
-        failed_item = next((item for item in failed_items if item["name"] == pod), None)
+        failed_item = next(
+            (item for item in failed_items if item["name"] == pod["name"]), None
+        )
         if failed_item:
             console.print(
-                f"[green]{i:3d}[/green]) {pod} [red]{failed_item['reason']}[/red]"
+                f"[green]{i:3d}[/green]) {failed_item['kind']}/{pod['name']} [red]{failed_item['reason']}[/red]"  # noqa: E501
             )
         else:
-            console.print(f"[green]{i:3d}[/green]) {pod}")
+            console.print(
+                f"[green]{i:3d}[/green]) {pod['controller_kind']}/{pod['name']}"
+            )
     console.print("  [green]Enter[/green]) exit")
 
 
@@ -709,7 +778,7 @@ Suggested usage:
         help="Show only non-normal events",
     )
     parser.add_argument(
-        "-a", "--all", action="store_true", help="Get events for all pods"
+        "-a", "--all", action="store_true", help="Get all events in the namespace"
     )
     parser.add_argument("-k", "--kind", help="List all unique kinds from events")
     parser.add_argument(
@@ -853,23 +922,13 @@ Suggested usage:
             sys.exit(1)
 
     # Normal interactive execution
-    console.print("[cyan]Fetching pods...[/cyan]")
-    pods = get_pods(namespace)
-    failures = get_failures(namespace)
-    # Use a set to ensure uniqueness
-    # TODO: check if this is WAI
-    all_pods = set(pods)
-    all_pods.update([item["name"] for item in failures])
-    pods = sorted(list(all_pods))  # Convert back to sorted list for consistent display
-    if not pods:
-        console.print(f"[yellow]No pods found in namespace {namespace}[/yellow]")
-        sys.exit(1)
+    pods, failures = get_menu_items(namespace)
 
     display_menu(pods)
     selection = get_user_selection(len(pods))
 
-    if selection == "e":  # Non-normal events for all pods
-        console.print("\n[cyan]Getting non-normal events for all pods[/cyan]")
+    if selection == "e":
+        console.print("\n[cyan]Getting all non-normal events[/cyan]")
         console.print(f"[cyan]{'-' * 40}[/cyan]")
         try:
             events = get_all_events(
@@ -890,12 +949,12 @@ Suggested usage:
             console.print(f"[red]Error getting events: {e}[/red]")
     else:  # Events for specific pod
         selected_pod = pods[selection - 1]
-        console.print(f"\n[cyan]Getting events for pod: {selected_pod}[/cyan]")
+        console.print(f"\n[cyan]Getting events for pod: {selected_pod['name']}[/cyan]")
         console.print(f"[cyan]{'-' * 40}[/cyan]")
         try:
             events = get_events_for_pod(
                 namespace,
-                selected_pod,
+                selected_pod["name"],
                 args.exceptions_only,
                 show_timestamps=args.show_timestamps,
             )
