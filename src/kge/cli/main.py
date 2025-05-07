@@ -612,7 +612,9 @@ def list_pods_for_completion():
     pods = get_pods(namespace)
     failures = get_failures(namespace)
     # Combine pod names and failed items
-    all_items = pods + [item["name"] for item in failures]
+    pod_names = [pod["name"] for pod in pods]
+    failure_names = [item["name"] for item in failures]
+    all_items = pod_names + failure_names
     print(" ".join(all_items))
     sys.exit(0)
 
@@ -630,7 +632,7 @@ def display_menu(pods: List[Dict[str, str]]) -> None:
         )
         if failed_item:
             console.print(
-                f"[green]{i:3d}[/green]) {failed_item['kind']}/{pod['name']} [red]{failed_item['reason']}[/red]"
+                f"[green]{i:3d}[/green]) {failed_item['kind']}/{pod['name']} [red]{failed_item['reason']}[/red]"  # noqa: E501
             )
         else:
             console.print(
