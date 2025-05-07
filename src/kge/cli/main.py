@@ -141,6 +141,17 @@ def get_menu_items(namespace: str) -> tuple[List[Dict[str, str]], List[Dict[str,
         sys.exit(1)
     return pods, failures
 
+def get_top_level_controller(v1, apps_v1, namespace: str, owner_ref) -> tuple[str, str]:
+    """Get the top level controller by traversing owner references."""
+    if owner_ref.kind == "ReplicaSet":
+        try:
+            rs = apps_v1.read_namespaced_replica_set(owner_ref.name, namespace)
+            if hasattr(rs.metadata, 'owner_references') and rs.metadata.owner_references:
+                return get_top_level_controller(v1, apps_v1, namespace, rs.metadata.owner_references[0])
+        except Exception as e:
+            debug_print(f"Error getting ReplicaSet {owner_ref.name}: {e}")
+    return owner_ref.kind, owner_ref.name
+
 def get_pods(namespace: str) -> List[Dict[str, str]]:
     """Get list of pods in the specified namespace with caching."""
     current_time = time.time()
@@ -157,6 +168,7 @@ def get_pods(namespace: str) -> List[Dict[str, str]]:
     try:
         debug_print(f"Fetching fresh pod data for namespace {namespace}")
         v1 = get_k8s_client()
+        apps_v1 = get_k8s_apps_client()
         pods = v1.list_namespaced_pod(namespace)
         pod_info = []
         for pod in pods.items:
@@ -164,8 +176,9 @@ def get_pods(namespace: str) -> List[Dict[str, str]]:
             # Check for controller reference
             if hasattr(pod.metadata, 'owner_references') and pod.metadata.owner_references:
                 owner = pod.metadata.owner_references[0]
-                pod_dict["controller_kind"] = owner.kind
-                pod_dict["controller_name"] = owner.name
+                controller_kind, controller_name = get_top_level_controller(v1, apps_v1, namespace, owner)
+                pod_dict["controller_kind"] = controller_kind
+                pod_dict["controller_name"] = controller_name
             else:
                 pod_dict["controller_kind"] = "Pod"
                 pod_dict["controller_name"] = pod.metadata.name
