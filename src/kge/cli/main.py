@@ -116,6 +116,21 @@ def get_current_namespace() -> str:
     except Exception:
         return "default"
 
+def get_menu_items(namespace: str) -> tuple[List[str], List[Dict[str, str]]]:
+    console.print("[cyan]Fetching Events...[/cyan]")
+    pods = get_pods(namespace)
+    failures = get_failures(namespace)
+    # Use a set to ensure uniqueness
+    # TODO: check if this is WAI
+    all_pods = set(pods)
+    all_pods.update([item["name"] for item in failures])
+    pods = sorted(list(all_pods))  # Convert back to sorted list for consistent display
+    # ^ list pods first, then non-pod resources
+    
+    if not pods:
+        console.print(f"[yellow]No pods found in namespace {namespace}[/yellow]")
+        sys.exit(1)
+    return pods, failures
 
 def get_pods(namespace: str) -> List[str]:
     """Get list of pods in the specified namespace with caching."""
@@ -557,8 +572,8 @@ def list_pods_for_completion():
 def display_menu(pods: List[str]) -> None:
     """Display numbered menu of pods with color."""
     console.print("[cyan]Select a pod:[/cyan]")
-    console.print("  [green]e[/green]) Abnormal events for all pods")
-    console.print("  [green]a[/green]) All pods, all events")
+    console.print("  [green]e[/green]) All abnormal events")
+    console.print("  [green]a[/green]) All events")
     failed_items = get_failures(get_current_namespace())
     for i, pod in enumerate(pods, 1):
         # Check if the pod is a failed item
@@ -709,7 +724,7 @@ Suggested usage:
         help="Show only non-normal events",
     )
     parser.add_argument(
-        "-a", "--all", action="store_true", help="Get events for all pods"
+        "-a", "--all", action="store_true", help="Get all events in the namespace"
     )
     parser.add_argument("-k", "--kind", help="List all unique kinds from events")
     parser.add_argument(
@@ -853,23 +868,13 @@ Suggested usage:
             sys.exit(1)
 
     # Normal interactive execution
-    console.print("[cyan]Fetching pods...[/cyan]")
-    pods = get_pods(namespace)
-    failures = get_failures(namespace)
-    # Use a set to ensure uniqueness
-    # TODO: check if this is WAI
-    all_pods = set(pods)
-    all_pods.update([item["name"] for item in failures])
-    pods = sorted(list(all_pods))  # Convert back to sorted list for consistent display
-    if not pods:
-        console.print(f"[yellow]No pods found in namespace {namespace}[/yellow]")
-        sys.exit(1)
+    pods, failures = get_menu_items(namespace)
 
     display_menu(pods)
     selection = get_user_selection(len(pods))
 
-    if selection == "e":  # Non-normal events for all pods
-        console.print("\n[cyan]Getting non-normal events for all pods[/cyan]")
+    if selection == "e":
+        console.print("\n[cyan]Getting all non-normal events[/cyan]")
         console.print(f"[cyan]{'-' * 40}[/cyan]")
         try:
             events = get_all_events(
