@@ -1,163 +1,205 @@
 import sys
 import time
 import argparse
-from typing import List, Dict
-from kubernetes import client, config
+import kubernetes
+from typing import List, Dict, Optional, Any
+from datetime import datetime, timezone
+from dataclasses import dataclass
 from rich.console import Console
+from rich.table import Table
+from rich.text import Text
 import rich.box
 import os
 
-def get_kubernetes_api_client():
-    """
-    Loads Kubernetes configuration and returns an API client.
-    """
-    try:
-        # Try to load in-cluster configuration
-        config.load_incluster_config()
-    except config.ConfigException:
-        try:
-            # Try to load local kubeconfig
-            config.load_kube_config()
-        except config.ConfigException:
-            raise Exception("Could not configure Kubernetes client. "
-                            "Ensure you have a valid kubeconfig or are running in-cluster.")
-    return client.CoreV1Api()
+console = Console()
 
-def fetch_events(namespace: str, v1: client.CoreV1Api):
-    """
-    Fetches events from the specified namespace.
-    """
-    if namespace:
-        print(f"Fetching events for namespace: {namespace}")
-        return v1.list_namespaced_event(namespace=namespace, watch=False)
-    else:
-        print("Fetching events for all namespaces")
-        return v1.list_event_for_all_namespaces(watch=False)
+@dataclass
+class KubernetesEvent:
+    """Represents a Kubernetes event with all relevant information."""
+    namespace: str
+    involved_object_name: str
+    involved_object_kind: str
+    reason: str
+    message: str
+    first_timestamp: Optional[datetime]
+    last_timestamp: Optional[datetime]
+    api_version: Optional[str]
+    type: str
+    count: int
 
-def process_and_filter_events(namespace: str = None, reason_filter: str = None, kind_filter: str = None, type_filter: str = None):
-    """
-    Fetches, processes, filters, and displays unique Kubernetes events.
+    @classmethod
+    def from_v1_event(cls, event: Any) -> 'KubernetesEvent':
+        """Create a KubernetesEvent from a V1Event object."""
+        return cls(
+            namespace=event.metadata.namespace if event.metadata else None,
+            involved_object_name=event.involved_object.name if event.involved_object else None,
+            involved_object_kind=event.involved_object.kind if event.involved_object else None,
+            reason=event.reason,
+            message=event.message,
+            first_timestamp=event.first_timestamp,
+            last_timestamp=event.last_timestamp,
+            api_version=event.involved_object.api_version if event.involved_object else None,
+            type=event.type,
+            count=event.count
+        )
 
-    Args:
-        namespace (str, optional): The Kubernetes namespace to fetch events from.
-                                   If None, fetches from all namespaces.
-        reason_filter (str, optional): Filter events by this reason (e.g., "Failed", "Scheduled").
-        kind_filter (str, optional): Filter events by the kind of the involved object (e.g., "Pod", "Deployment").
-        type_filter (str, optional): Filter events by type (e.g., "Normal", "Warning").
-    """
-    try:
-        v1 = get_kubernetes_api_client()
-        events_list = fetch_events(namespace, v1)
-    except Exception as e:
-        print(f"Error fetching events: {e}")
-        return
-
-    processed_events = []
-    # Using a set to track unique event signatures to avoid redundant processing if desired
-    # A signature could be a tuple of (name, kind, reason, first_timestamp, message)
-    # For simplicity here, we'll just process all and then you can decide how to define "unique"
-    # for display or further processing.
-
-    print("\n--- Filtered Events ---")
-    if not events_list.items:
-        print("No events found.")
-        return
-
-    for event_item in events_list.items:
-        # Safely access attributes from the event object (V1Event)
-        event_namespace = event_item.metadata.namespace if event_item.metadata else None
-        reason = event_item.reason
-        message = event_item.message
-        first_timestamp = event_item.first_timestamp
-        last_timestamp = event_item.last_timestamp
-        api_version = event_item.involved_object.api_version if event_item.involved_object else None
-        event_type = event_item.type
-
-        involved_object_name = None
-        involved_object_kind = None
-
-        if event_item.involved_object:
-            involved_object_name = event_item.involved_object.name
-            involved_object_kind = event_item.involved_object.kind
-
-        # --- Filtering Logic ---
-        if reason_filter and reason != reason_filter:
-            continue
-        if kind_filter and involved_object_kind != kind_filter:
-            continue
-        if type_filter and event_type != type_filter:
-            continue
-        # Add more filters as needed
-
-        event_data = {
-            "namespace": event_namespace,
-            "involved_object_name": involved_object_name,
-            "involved_object_kind": involved_object_kind,
-            "reason": reason,
-            "message": message,
-            "first_timestamp": first_timestamp.isoformat() if first_timestamp else None,
-            "last_timestamp": last_timestamp.isoformat() if last_timestamp else None,
-            "api_version": api_version,
-            "type": event_type,
-            "count": event_item.count
+    def to_dict(self) -> Dict:
+        """Convert the event to a dictionary."""
+        return {
+            "namespace": self.namespace,
+            "involved_object_name": self.involved_object_name,
+            "involved_object_kind": self.involved_object_kind,
+            "reason": self.reason,
+            "message": self.message,
+            "first_timestamp": self.first_timestamp.isoformat() if self.first_timestamp else None,
+            "last_timestamp": self.last_timestamp.isoformat() if self.last_timestamp else None,
+            "api_version": self.api_version,
+            "type": self.type,
+            "count": self.count
         }
-        processed_events.append(event_data)
 
-        # --- Displaying the event (simple print) ---
-        print(f"\nNamespace: {event_namespace}")
-        if involved_object_name and involved_object_kind:
-            print(f"  Involved Object: {involved_object_kind}/{involved_object_name}")
-        print(f"  Reason: {reason}")
-        print(f"  Type: {event_type}")
-        print(f"  Message: {message}")
-        print(f"  Count: {event_item.count}")
-        if first_timestamp:
-            print(f"  First Seen: {first_timestamp.isoformat()}")
-        if last_timestamp:
-            print(f"  Last Seen: {last_timestamp.isoformat()}")
-        if api_version:
-            print(f"  API Version: {api_version}")
+class KubernetesEventManager:
+    """Manages Kubernetes events fetching and processing."""
 
-    if not processed_events:
-        print("No events matched the specified filters.")
+    def __init__(self):
+        self._init_kubernetes_client()
 
-    # If you need a list of unique event objects based on some criteria,
-    # you would implement that logic here. For example, to get unique
-    # combinations of (name, kind, reason):
-    # unique_signatures = set()
-    # truly_unique_events = []
-    # for pe in processed_events:
-    #     signature = (pe["involved_object_name"], pe["involved_object_kind"], pe["reason"], pe["message"]) # Adjust signature as needed
-    #     if signature not in unique_signatures:
-    #         unique_signatures.add(signature)
-    #         truly_unique_events.append(pe)
-    # print(f"\n--- Truly Unique Event Signatures Found: {len(truly_unique_events)} ---")
-    # for ue in truly_unique_events:
-    #     print(ue)
+    def _init_kubernetes_client(self):
+        """Initialize the Kubernetes client with proper configuration."""
+        try:
+            # First try to load in-cluster config
+            kubernetes.config.load_incluster_config()
+            console.print("[green]Using in-cluster configuration[/green]")
+        except kubernetes.config.ConfigException:
+            try:
+                # Then try to load from kubeconfig
+                kubernetes.config.load_kube_config()
+                console.print("[green]Using kubeconfig configuration[/green]")
+            except kubernetes.config.ConfigException:
+                console.print("[red]Could not configure Kubernetes client.[/red]")
+                console.print("[yellow]Please ensure you have a valid kubeconfig file or are running in-cluster.[/yellow]")
+                console.print("[yellow]You can set KUBECONFIG environment variable to specify a custom kubeconfig path.[/yellow]")
+                raise Exception("Could not configure Kubernetes client. "
+                              "Ensure you have a valid kubeconfig or are running in-cluster.")
 
-    return processed_events
+        self.v1 = kubernetes.client.CoreV1Api()
 
+    def fetch_events(self, namespace: Optional[str] = None) -> List[KubernetesEvent]:
+        """Fetches events from the specified namespace."""
+        try:
+            if namespace:
+                console.print(f"[cyan]Fetching events for namespace: {namespace}[/cyan]")
+                events = self.v1.list_namespaced_event(namespace=namespace, watch=False)
+            else:
+                console.print("[cyan]Fetching events for all namespaces[/cyan]")
+                events = self.v1.list_event_for_all_namespaces(watch=False)
+
+            return [KubernetesEvent.from_v1_event(event) for event in events.items]
+        except Exception as e:
+            console.print(f"[red]Error fetching events: {e}[/red]")
+            return []
+
+    def filter_events(self,
+                     events: List[KubernetesEvent],
+                     reason_filter: Optional[str] = None,
+                     kind_filter: Optional[str] = None,
+                     type_filter: Optional[str] = None) -> List[KubernetesEvent]:
+        """Filters events based on specified criteria."""
+        filtered_events = events
+
+        if reason_filter:
+            filtered_events = [e for e in filtered_events if e.reason == reason_filter]
+        if kind_filter:
+            filtered_events = [e for e in filtered_events if e.involved_object_kind == kind_filter]
+        if type_filter:
+            filtered_events = [e for e in filtered_events if e.type == type_filter]
+
+        return filtered_events
+
+    def display_events_table(self, events: List[KubernetesEvent], show_timestamps: bool = False):
+        """Displays events in a Rich table format."""
+        if not events:
+            console.print("[yellow]No events found.[/yellow]")
+            return
+
+        table = Table(
+            show_header=True,
+            header_style="bold magenta",
+            box=rich.box.ROUNDED,
+            show_lines=True,
+            padding=(0, 1),
+            border_style="white",
+            style="dim"
+        )
+
+        # Add columns
+        table.add_column("Time", no_wrap=True, style="cyan")
+        table.add_column("Type", no_wrap=True, style="yellow")
+        table.add_column("Reason", no_wrap=True, style="red")
+        table.add_column("Resource", no_wrap=True, style="blue")
+        table.add_column("Message", style="white")
+
+        # Sort events by timestamp
+        sorted_events = sorted(events, key=lambda x: x.last_timestamp or datetime.max.replace(tzinfo=timezone.utc))
+
+        for event in sorted_events:
+            # Format timestamp
+            if show_timestamps:
+                timestamp = str(event.last_timestamp) if event.last_timestamp else "unknown time"
+            else:
+                if event.last_timestamp is None:
+                    timestamp = "unknown time"
+                else:
+                    now = datetime.now(timezone.utc)
+                    delta = now - event.last_timestamp
+
+                    if delta.days > 0:
+                        timestamp = f"{delta.days}d ago"
+                    elif delta.seconds >= 3600:
+                        hours = delta.seconds // 3600
+                        timestamp = f"{hours}h ago"
+                    elif delta.seconds >= 60:
+                        minutes = delta.seconds // 60
+                        timestamp = f"{minutes}m ago"
+                    else:
+                        timestamp = f"{delta.seconds}s ago"
+
+            table.add_row(
+                Text(timestamp, style="cyan"),
+                Text(event.type, style="yellow"),
+                Text(event.reason, style="red"),
+                Text(f"{event.involved_object_kind}/{event.involved_object_name}", style="blue"),
+                Text(event.message, style="white")
+            )
+
+        console.print(table)
+
+def main():
+    parser = argparse.ArgumentParser(description="View Kubernetes events with a beautiful TUI")
+    parser.add_argument("-n", "--namespace", help="Namespace to fetch events from")
+    parser.add_argument("-r", "--reason", help="Filter events by reason")
+    parser.add_argument("-k", "--kind", help="Filter events by kind")
+    parser.add_argument("-t", "--type", help="Filter events by type")
+    parser.add_argument("--show-timestamps", action="store_true", help="Show absolute timestamps instead of relative times")
+
+    args = parser.parse_args()
+
+    try:
+        event_manager = KubernetesEventManager()
+        events = event_manager.fetch_events(args.namespace)
+        filtered_events = event_manager.filter_events(
+            events,
+            reason_filter=args.reason,
+            kind_filter=args.kind,
+            type_filter=args.type
+        )
+        event_manager.display_events_table(filtered_events, args.show_timestamps)
+    except KeyboardInterrupt:
+        console.print("\nExiting gracefully...")
+        sys.exit(0)
+    except Exception as e:
+        console.print(f"\n[red]Error: {e}[/red]")
+        sys.exit(1)
 
 if __name__ == "__main__":
-    # Example Usage:
-
-    # 1. Get all events from a specific namespace
-    # print("--- Events from 'default' namespace ---")
-    # process_and_filter_events(namespace="default")
-
-    # 2. Get all Warning events from all namespaces
-    # print("\n--- All Warning Events ---")
-    # process_and_filter_events(type_filter="Warning")
-
-    # 3. Get all "Failed" events for "Pod" kinds across all namespaces
-    process_and_filter_events()
-    print("\n--- Failed Pod Events ---")
-    process_and_filter_events(reason_filter="Failed", kind_filter="Pod")
-
-    # 4. Get all events from all namespaces (can be a lot of data)
-    # print("\n--- All Events from All Namespaces ---")
-    # process_and_filter_events()
-
-    # 5. Get events with a specific reason from a specific namespace
-    # print("\n--- 'Pulled' events in 'kube-system' namespace ---")
-    # process_and_filter_events(namespace="kube-system", reason_filter="Pulled")
+    main()
