@@ -249,7 +249,6 @@ def get_abnormal_events(namespace: str) -> List[Dict[str, str]]:
 
 
 def get_failures(namespace: str) -> List[Dict[str, str]]:
-    """Get list of things that failed to create in the given namespace."""
     current_time = time.time()
     debug_print(f"Getting failed items for namespace: {namespace}")
 
@@ -274,7 +273,7 @@ def get_failures(namespace: str) -> List[Dict[str, str]]:
                     name = event.involved_object.name
                     kind = event.involved_object.kind
                     if not is_resource_healthy(namespace, name, kind):
-                        debug_print(f"Found {event.reason}: {name} {kind} {namespace}")
+                        debug_print(f"Found {kind}/{name}: {event.reason}")
                         failed_items.append(
                             {
                                 "name": name,
@@ -520,80 +519,57 @@ def is_resource_healthy(namespace: str, name: str, kind: str) -> bool:
             debug_print(f"Using cached health check for {cache_key}")
             return cached_result
 
-    debug_print(f"Checking health of {name} {kind} in namespace {namespace}")
+    debug_print(f"Checking health of {kind}/{name} in namespace {namespace}")
     try:
-        if kind == "ReplicaSet":
+        # Use dynamic client to fetch the resource
+        from kubernetes.dynamic import DynamicClient
+        k8s_client = get_k8s_client()
+        dynamic_client = DynamicClient(k8s_client.api_client)
+
+        # Get the resource API
+        resource = dynamic_client.resources.get(api_version="v1", kind=kind)
+
+        # Fetch the resource
+        obj = resource.get(name=name, namespace=namespace)
+        if not obj:
+            debug_print(f"Resource {name} {kind} not found, assuming deleted")
+            return True
+        # debug_print(f"Fetched {kind}/{name}: {obj}")
+        # Check health based on common status fields
+        is_healthy = False
+        if hasattr(obj.status, "ready_replicas") and hasattr(obj.status, "replicas") and obj.status.unavailable_replicas == 0:
             debug_print(
-                f"Checking health of ReplicaSet {name} in namespace {namespace}"
+                f"Checking ready_replicas for {kind}/{name}: {obj.status.ready_replicas} / {obj.status.replicas}"
             )
-            apps_v1 = get_k8s_apps_client()
-            rs = apps_v1.read_namespaced_replica_set(name, namespace)
-            is_healthy = False
-            if rs.status.ready_replicas == rs.status.replicas:
-                debug_print(f"ReplicaSet {name} in namespace {namespace} is healthy")
-                is_healthy = True
-            elif (
-                hasattr(rs.status, "unavailable_replicas")
-                and rs.status.unavailable_replicas == 0
-            ):
+            if obj.status.ready_replicas is None or obj.status.replicas is None:
                 debug_print(
-                    f"ReplicaSet {name} in namespace {namespace} unavailable_replicas=0"
+                    f"Missing status fields for {kind}/{name}, assuming unhealthy"
                 )
-                is_healthy = True
-            else:
-                if (
-                    hasattr(rs.metadata, "owner_references")
-                    and rs.metadata.owner_references
-                ):
-                    debug_print(
-                        f"ReplicaSet {name} in namespace {namespace} has owner references"
-                    )
-                    owner = rs.metadata.owner_references[0]
-                    is_healthy = is_resource_healthy(namespace, owner.name, owner.kind)
-                else:
-                    debug_print(
-                        f"""ReplicaSet {name} in namespace:
-                        {namespace} has no owner references
-                        \n{rs.metadata.owner_references}"""
-                    )
-                    is_healthy = False
-        elif kind == "Deployment":
+                is_healthy = False
+                return is_healthy
+            is_healthy = obj.status.ready_replicas == obj.status.replicas
+        elif hasattr(obj.status, "phase"):
+            debug_print(f"Checking phase for {kind}/{name}: {obj.status.phase}")
+            is_healthy = obj.status.phase == "Running"
+        elif hasattr(obj.status, "succeeded") and hasattr(obj.spec, "completions"):
             debug_print(
-                f"Checking health of Deployment {name} in namespace {namespace}"
+                f"Checking status/completions for {kind}/{name}: {obj.status.succeeded} / {obj.spec.completions}"
             )
-            apps_v1 = get_k8s_apps_client()
-            deployment = apps_v1.read_namespaced_deployment(name, namespace)
-            is_healthy = (
-                deployment.status.unavailable_replicas == 0
-                and deployment.status.ready_replicas == deployment.status.replicas
-            )
-        elif kind == "StatefulSet":
-            debug_print(
-                f"Checking health of StatefulSet {name} in namespace {namespace}"
-            )
-            apps_v1 = get_k8s_apps_client()
-            sts = apps_v1.read_namespaced_stateful_set(name, namespace)
-            is_healthy = sts.status.ready_replicas == sts.status.replicas
-        elif kind == "Pod":
-            debug_print(f"Checking health of Pod {name} in namespace {namespace}")
-            v1 = get_k8s_client()
-            pod = v1.read_namespaced_pod(name, namespace)
-            is_healthy = pod.status.phase == "Running"
+            is_healthy = obj.status.succeeded == obj.spec.completions
+        elif hasattr(obj.status, "phase") and obj.status.phase == "Bound":
+            debug_print(f"Checking phase for {kind}/{name}: {obj.status.phase}")
+            is_healthy = True
         else:
-            debug_print(f"Unknown resource kind: {kind}, assuming unhealthy")
-            is_healthy = False
+            debug_print(f"Unknown health status for {kind}/{name}, assuming unhealthy")
 
         # Update cache
         health_check_cache[cache_key] = (is_healthy, current_time)
         return is_healthy
     except Exception as e:
         debug_print(f"Error checking health of {name} {kind}: {e}")
-        if not hasattr(e, "status"):
-            return True
-        if e.status == 404:
+        if hasattr(e, "status") and e.status == 404:
             debug_print(f"Resource {name} {kind} not found, assuming deleted")
             return True
-        debug_print(f"Error checking health of {name} {kind}: {e}")
         return False
 
 
@@ -760,7 +736,52 @@ def list_resources_for_completion():
     sys.exit(0)
 
 
+def download_events_json(namespace: str) -> List[Dict[str, str]]:
+    """Download the entire JSON for events in the given namespace."""
+    try:
+        debug_print(f"Downloading events JSON for namespace: {namespace}")
+        v1 = get_k8s_client()
+        if namespace == "all":
+            events = v1.list_event_for_all_namespaces()
+        else:
+            events = v1.list_namespaced_event(namespace)
+        debug_print(f"Found {len(events.items)} events")
+        return [event.to_dict() for event in events.items]
+    except client.ApiException as e:
+        console.print(f"[red]Error downloading events JSON: {e}[/red]")
+        return []
+
+
+def find_unique_event_objects(namespace: str) -> Dict[tuple, Dict[str, str]]:
+    """Return a dictionary of unique involved objects with their details."""
+    events_json = download_events_json(namespace)
+    unique_objects = {}
+
+    for event in events_json:
+        namespace = event.get("namespace")
+        involved_object = event.get("involved_object", {})
+        name = involved_object.get("name")
+        kind = involved_object.get("kind")
+        reason = event.get("reason")
+        message = event.get("message")
+        first_timestamp = event.get("first_timestamp")
+        last_timestamp = event.get("last_timestamp")
+        api_version = event.get("api_version")
+        event_type = event.get("type")
+
+        # Use a tuple (namespace, name, kind) as the key
+        unique_objects[(namespace, name, kind, event_type, api_version)] = {
+            "reason": reason,
+            "message": message,
+            "first_timestamp": first_timestamp,
+            "last_timestamp": last_timestamp,
+        }
+
+    return unique_objects
+
+
 def main():
+
     """Main entry point for the CLI."""
     parser = argparse.ArgumentParser(
         description="""View Kubernetes events\n
