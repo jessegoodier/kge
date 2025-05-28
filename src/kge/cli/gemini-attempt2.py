@@ -422,20 +422,19 @@ class KubernetesEventManager:
         table.add_column("Message")
 
         now = datetime.now(timezone.utc)
+
         # Ensure events are sorted for display; grouping already sorts them, but this is a safeguard
+        def ensure_aware(dt):
+            if dt is None:
+                return datetime.min.replace(tzinfo=timezone.utc)
+            if dt.tzinfo is None:
+                return dt.replace(tzinfo=timezone.utc)
+            return dt
+
         sorted_events = sorted(
             events,
-            key=lambda event: (
-                event.last_timestamp or event.first_timestamp or datetime.min
-            ).replace(
-                tzinfo=(
-                    timezone.utc
-                    if (
-                        event.last_timestamp or event.first_timestamp or datetime.min
-                    ).tzinfo
-                    is None
-                    else None
-                )
+            key=lambda event: ensure_aware(
+                event.last_timestamp or event.first_timestamp
             ),
             reverse=True,
         )
