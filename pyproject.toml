@@ -9,7 +9,9 @@ requires-python = ">=3.11,<4.0"
 dependencies = [
     "rich>=13.7.0,<14.0.0",
     "kubernetes>=32.0.1,<33.0.0",
-    "textual"
+    "textual",
+    "prompt_toolkit"
+
 ]
 keywords = ["kubernetes", "troubleshooting", "kubectl", "events", "pod", "replicaset", "failed", "event"]
 dynamic = ["classifiers"]

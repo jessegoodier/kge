@@ -1,22 +1,24 @@
-#!/usr/bin/env python3
-
+import argparse
+import asyncio
 import sys
 import time
-import argparse
-import kubernetes
-from typing import List, Dict, Optional, Any, Tuple
-from datetime import datetime, timezone
 from dataclasses import dataclass
-import asyncio  # Ensure asyncio is imported
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Tuple
 
+import kubernetes
+import rich.box
+
+# Prompt-toolkit imports
+from prompt_toolkit import Application
+from prompt_toolkit.formatted_text import FormattedText, to_formatted_text
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.layout import HSplit, Layout, VSplit, Window
+from prompt_toolkit.layout.controls import FormattedTextControl
+from prompt_toolkit.styles import Style
 from rich.console import Console
 from rich.table import Table
 from rich.text import Text
-import rich.box
-
-from textual.app import App, ComposeResult
-from textual.widgets import Header, Footer, DataTable
-from textual.binding import Binding
 
 # Initialize Rich Console
 console = Console()
@@ -476,28 +478,28 @@ class KubernetesEventManager:
         console.print(table)
 
 
-class KubeEventsTUI(App[Optional[List[KubernetesEvent]]]):
-    BINDINGS = [
-        Binding("q", "quit_app", "Quit", show=True, priority=True),
-        Binding("ctrl+c", "quit_app", "Quit", show=False),
-    ]
-    TITLE = "Kubernetes Event Viewer"
-    CSS = """
-    Screen { align: center middle; }
-    DataTable { width: 100%; height: 100%; border: round $primary; }
-    Header { background: $primary-background; color: $text; text-style: bold; padding: 0 1; }
-    Footer { background: $primary-darken-1; padding: 0 1; }
-    """
+class KubeEventsInteractiveSelector:
+    def __init__(self, grouped_data: Dict[str, Dict[str, Any]]):
+        self.grouped_data = grouped_data
+        self.sorted_owner_uids = sorted(
+            self.grouped_data.keys(),
+            key=lambda uid: self.grouped_data[uid]["latest_event_timestamp"],
+            reverse=True,
+        )
+        self.selected_index = 0
+        self.result_events: Optional[List[KubernetesEvent]] = None
 
-    def __init__(
-        self, event_manager: KubernetesEventManager, args_namespace: Optional[str]
-    ):
-        super().__init__()
-        self.event_manager = event_manager
-        self.args_namespace = args_namespace
-        self.grouped_data: Optional[Dict[str, Dict[str, Any]]] = None
-        self.all_events_by_owner_uid: Dict[str, List[KubernetesEvent]] = {}
-        self.exit_message_for_console: Optional[str] = None
+        self.key_bindings = KeyBindings()
+        self._setup_key_bindings()
+
+        # Define styles as actual prompt_toolkit style strings
+        self.style_definitions = {
+            "selected-row": "bg:#ansiblue #ansiyellow",
+            "header": "bold #ansimagenta",
+            "normal-row": "",  # Default style (no special formatting)
+            "info": "bold #ansicyan",
+        }
+        self.style = Style.from_dict(self.style_definitions)
 
     def _format_relative_time(self, timestamp: Optional[datetime]) -> str:
         if timestamp is None:
@@ -521,127 +523,118 @@ class KubeEventsTUI(App[Optional[List[KubernetesEvent]]]):
             return f"{minutes}m ago"
         return f"{delta.seconds}s ago"
 
-    def compose(self) -> ComposeResult:
-        yield Header()
-        yield DataTable(id="events_table", cursor_type="row", zebra_stripes=True)
-        yield Footer()
-
-    async def on_mount(self) -> None:
-        table = self.query_one(DataTable)
-        table.add_column(Text("Time", style="bold cyan"), key="time")
-        table.add_column(Text("Type", style="bold yellow"), key="type")
-        table.add_column(Text("Reason", style="bold red"), key="reason")
-        table.add_column(Text("Owner Resource", style="bold blue"), key="resource")
-        table.add_column(Text("Owner Namespace", style="bold green"), key="namespace")
-
-        table.loading = True
-        self.sub_title = "Fetching K8s events..."
-
-        try:
-            # Use asyncio.to_thread to run blocking IO
-            all_events: Optional[List[KubernetesEvent]] = await asyncio.to_thread(
-                self.event_manager.fetch_events, self.args_namespace
+    def _get_list_content(self) -> FormattedText:
+        lines = []
+        # Use the actual style string from style_definitions
+        lines.append(
+            (
+                self.style_definitions["header"],
+                "Select an owner using ↑↓, press Enter to view details, 'q' to quit.\n",
             )
-
-            if not all_events:
-                self.exit_message_for_console = "No events found from Kubernetes API."
-                table.add_row(
-                    Text(
-                        self.exit_message_for_console, style="yellow", justify="center"
-                    )
-                )
-                table.loading = False
-                self.sub_title = "No Events"
-                return
-
-            self.sub_title = "Grouping events by owner..."
-            # Pass 'all_events' as an argument to the function run in a thread
-            self.grouped_data = await asyncio.to_thread(
-                self.event_manager.group_events_by_owner, all_events
-            )
-        except Exception as e:
-            self.exit_message_for_console = (
-                f"Error during data fetching/processing: {e}"
-            )
-            table.add_row(
-                Text(self.exit_message_for_console, style="red", justify="center")
-            )
-            table.loading = False
-            self.sub_title = "Error"
-            import traceback
-
-            self.exit_message_for_console += f"\n{traceback.format_exc()}"
-            return
-
-        table.loading = False
-        self.sub_title = self.TITLE
-
-        if not self.grouped_data:
-            self.exit_message_for_console = (
-                "No event groups to display after processing."
-            )
-            table.add_row(
-                Text(self.exit_message_for_console, style="yellow", justify="center")
-            )
-            return
-
-        sorted_owner_uids = sorted(
-            self.grouped_data.keys(),
-            key=lambda uid: self.grouped_data[uid]["latest_event_timestamp"],
-            reverse=True,
         )
 
-        self.all_events_by_owner_uid.clear()
-        for owner_uid in sorted_owner_uids:
+        if not self.sorted_owner_uids:
+            lines.append(
+                (self.style_definitions["info"], "No event groups to display.\n")
+            )
+            return to_formatted_text(lines)
+
+        # Header for the list (similar to Rich Table header)
+        lines.append(
+            (
+                self.style_definitions["info"],  # Use the actual style string
+                "{:<15} {:<10} {:<15} {:<40} {:<20}\n".format(
+                    "Time", "Type", "Reason", "Owner Resource", "Namespace"
+                ),
+            )
+        )
+        lines.append(
+            (self.style_definitions["info"], "-" * 105 + "\n")
+        )  # Separator, using 'info' style
+
+        for i, owner_uid in enumerate(self.sorted_owner_uids):
             data = self.grouped_data[owner_uid]
-            self.all_events_by_owner_uid[owner_uid] = data["events"]
             owner_info = data["owner_info"]
             resource_name_str = (
                 f"{owner_info.get('kind', 'N/A')}/{owner_info.get('name', 'N/A')}"
             )
-            owner_namespace_str = owner_info.get("namespace") or "cluster"
-            table.add_row(
-                Text(
-                    self._format_relative_time(data["latest_event_timestamp"]),
-                    style="cyan",
-                ),
-                Text(data["latest_event_type"], style="yellow"),
-                Text(data["latest_event_reason"], style="red"),
-                Text(resource_name_str, style="blue"),
-                Text(owner_namespace_str, style="green"),
-                key=owner_uid,
+            # Ensure owner_namespace_str is always a string.
+            owner_namespace_str = owner_info.get("namespace")
+            if owner_namespace_str is None:
+                owner_namespace_str = "cluster"
+
+            time_str = self._format_relative_time(data["latest_event_timestamp"])
+            type_str = data["latest_event_type"]
+            reason_str = data["latest_event_reason"]
+
+            # Construct the single line string first
+            line_content = "{:<15} {:<10} {:<15} {:<40} {:<20}".format(
+                time_str, type_str, reason_str, resource_name_str, owner_namespace_str
             )
 
-        if not table.row_count:
-            table.add_row(
-                Text(
-                    "No events to display after grouping.",
-                    style="yellow",
-                    justify="center",
+            # Get the actual style string based on selection
+            current_row_style = (
+                self.style_definitions["selected-row"]
+                if i == self.selected_index
+                else self.style_definitions["normal-row"]
+            )
+            lines.append((current_row_style, line_content + "\n"))
+
+        return to_formatted_text(lines)
+
+    def _setup_key_bindings(self):
+        @self.key_bindings.add("up")
+        def _(event):
+            self.selected_index = max(0, self.selected_index - 1)
+
+        @self.key_bindings.add("down")
+        def _(event):
+            self.selected_index = min(
+                len(self.sorted_owner_uids) - 1, self.selected_index + 1
+            )
+
+        @self.key_bindings.add("enter")
+        def _(event):
+            if self.sorted_owner_uids:
+                selected_uid = self.sorted_owner_uids[self.selected_index]
+                self.result_events = self.grouped_data[selected_uid]["events"]
+                event.app.exit(self.result_events)  # <-- Fix: pass result
+            else:
+                event.app.exit(None)
+
+        @self.key_bindings.add("c-c", eager=True)  # Ctrl+C
+        @self.key_bindings.add("q", eager=True)  # 'q' to quit
+        def _(event):
+            self.result_events = None  # Indicate no selection / user quit
+            event.app.exit(None)  # <-- Fix: pass None
+
+    def run(self) -> Optional[List[KubernetesEvent]]:
+        root_container = HSplit(
+            [
+                Window(
+                    content=FormattedTextControl(
+                        self._get_list_content, show_cursor=False
+                    )
                 )
-            )
-        else:
-            table.cursor_coordinate = (0, 0)
+            ]
+        )
 
-    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-        owner_uid = event.row_key.value
-        if owner_uid and owner_uid in self.all_events_by_owner_uid:
-            self.exit(result=self.all_events_by_owner_uid[owner_uid])
-        else:
-            self.exit_message_for_console = (
-                f"Error: Could not find events for selected row key: {owner_uid}"
-            )
-            self.exit(result=None)
+        application = Application(
+            layout=Layout(root_container),
+            key_bindings=self.key_bindings,
+            full_screen=True,
+            style=self.style,
+        )
 
-    def action_quit_app(self) -> None:
-        if not self.exit_message_for_console:
-            self.exit_message_for_console = "TUI exited by user."
-        self.exit(result=None)
+        # Run the prompt_toolkit application
+        self.result_events = application.run()
+
+        return self.result_events
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="View Kubernetes events with a Textual TUI, grouped by owner."
+        description="View Kubernetes events with an interactive list, grouped by owner."
     )
     parser.add_argument("-n", "--namespace", help="Namespace to fetch events from")
     parser.add_argument(
@@ -657,44 +650,51 @@ def main():
 
     args = parser.parse_args()
     event_manager_instance: Optional[KubernetesEventManager] = None
-    selected_owner_events_from_tui: Optional[List[KubernetesEvent]] = None
-    app_instance: Optional[KubeEventsTUI] = None
+    selected_owner_events_from_selector: Optional[List[KubernetesEvent]] = None
 
     try:
         event_manager_instance = KubernetesEventManager()
-        app_instance = KubeEventsTUI(
-            event_manager=event_manager_instance, args_namespace=args.namespace
+
+        console.print("[cyan]Loading events from Kubernetes...[/cyan]")
+        all_events: Optional[List[KubernetesEvent]] = asyncio.run(
+            asyncio.to_thread(event_manager_instance.fetch_events, args.namespace)
         )
-        selected_owner_events_from_tui = app_instance.run()
 
-        if (
-            hasattr(app_instance, "exit_message_for_console")
-            and app_instance.exit_message_for_console
-        ):
-            if (
-                selected_owner_events_from_tui is None
-                and "Error" in app_instance.exit_message_for_console
-            ):
-                console.print(
-                    f"\n[bold red]TUI Exited with Message: {app_instance.exit_message_for_console}[/bold red]"
-                )
-            elif selected_owner_events_from_tui is None:
-                console.print(
-                    f"\n[yellow]TUI Exited: {app_instance.exit_message_for_console}[/yellow]"
-                )
+        if not all_events:
+            console.print("[yellow]No events found from Kubernetes API.[/yellow]")
+            sys.exit(0)
 
-        if selected_owner_events_from_tui:
+        console.print("[cyan]Grouping events by owner...[/cyan]")
+        grouped_data = asyncio.run(
+            asyncio.to_thread(event_manager_instance.group_events_by_owner, all_events)
+        )
+
+        if not grouped_data:
+            console.print(
+                "[yellow]No event groups to display after processing.[/yellow]"
+            )
+            sys.exit(0)
+
+        # Run the prompt_toolkit interactive selector
+        selector = KubeEventsInteractiveSelector(grouped_data=grouped_data)
+        selected_owner_events_from_selector = selector.run()
+
+        if selected_owner_events_from_selector:
             console.print(
                 "\n[bold magenta]--- Detailed Events for Selected Owner ---[/bold magenta]"
             )
             filtered_selected_events = event_manager_instance.filter_events(
-                selected_owner_events_from_tui,
+                selected_owner_events_from_selector,
                 reason_filter=args.reason,
                 kind_filter=args.kind,
                 type_filter=args.type,
             )
             event_manager_instance.display_events_table(
                 filtered_selected_events, args.show_timestamps
+            )
+        else:
+            console.print(
+                "\n[yellow]No owner selected or selection cancelled.[/yellow]"
             )
 
     except KeyboardInterrupt:
