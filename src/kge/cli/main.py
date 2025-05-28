@@ -523,6 +523,7 @@ def is_resource_healthy(namespace: str, name: str, kind: str) -> bool:
     try:
         # Use dynamic client to fetch the resource
         from kubernetes.dynamic import DynamicClient
+
         k8s_client = get_k8s_client()
         dynamic_client = DynamicClient(k8s_client.api_client)
 
@@ -537,7 +538,11 @@ def is_resource_healthy(namespace: str, name: str, kind: str) -> bool:
         # debug_print(f"Fetched {kind}/{name}: {obj}")
         # Check health based on common status fields
         is_healthy = False
-        if hasattr(obj.status, "ready_replicas") and hasattr(obj.status, "replicas") and obj.status.unavailable_replicas == 0:
+        if (
+            hasattr(obj.status, "ready_replicas")
+            and hasattr(obj.status, "replicas")
+            and obj.status.unavailable_replicas == 0
+        ):
             debug_print(
                 f"Checking ready_replicas for {kind}/{name}: {obj.status.ready_replicas} / {obj.status.replicas}"
             )
@@ -781,7 +786,6 @@ def find_unique_event_objects(namespace: str) -> Dict[tuple, Dict[str, str]]:
 
 
 def main():
-
     """Main entry point for the CLI."""
     parser = argparse.ArgumentParser(
         description="""View Kubernetes events\n

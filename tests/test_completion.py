@@ -45,7 +45,13 @@ class TestCompletion(unittest.TestCase):
         # Mock get_pods
         self.patcher_get_pods = patch("kge.cli.main.get_pods")
         self.mock_get_pods = self.patcher_get_pods.start()
-        self.mock_get_pods.return_value = [{"name": "test-pod", "controller_kind": "Pod", "controller_name": "test-pod"}]
+        self.mock_get_pods.return_value = [
+            {
+                "name": "test-pod",
+                "controller_kind": "Pod",
+                "controller_name": "test-pod",
+            }
+        ]
 
     def _mock_k8s_response(self, mock_v1):
         """Helper method to mock Kubernetes API response headers to avoid deprecation warnings."""

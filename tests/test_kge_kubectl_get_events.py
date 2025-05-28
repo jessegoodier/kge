@@ -61,7 +61,7 @@ class TestCLIWithRealK8s(unittest.TestCase):
             pod = cls.v1.read_namespaced_pod(cls.test_pod_name, cls.test_namespace)
             events = cls.v1.list_namespaced_event(
                 cls.test_namespace,
-                field_selector=f"involvedObject.name={cls.test_pod_name}"
+                field_selector=f"involvedObject.name={cls.test_pod_name}",
             )
             if pod.status.phase == "Running" and len(events.items) > 0:
                 # Verify we have events with timestamps

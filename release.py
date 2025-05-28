@@ -4,6 +4,7 @@ import subprocess
 import argparse
 import requests
 
+
 def find_github_version():
     # Get latest release version from GitHub
     release_command = [
@@ -23,6 +24,7 @@ def find_github_version():
     except Exception as e:
         print(f"Error: {e}")
         exit(1)
+
 
 def find_pypi_version(github_version):
     try:
@@ -53,7 +55,9 @@ def check_version_match(version):
             exit(1)
         else:
             print("pyproject.toml version: ", pyproject_content)
-            pyproject_version = re.search(r'version = "(.+)"', pyproject_content).group(1)
+            pyproject_version = re.search(r'version = "(.+)"', pyproject_content).group(
+                1
+            )
         # Check __init__.py
         with open("src/kge/__init__.py", "r") as f:
             init_content = f.read()
@@ -88,19 +92,24 @@ def create_release(version, commit):
             "--jq",
             ".[].name",
         ]
-        release_list = subprocess.check_output(check_for_duplicate_release, text=True).splitlines()
+        release_list = subprocess.check_output(
+            check_for_duplicate_release, text=True
+        ).splitlines()
         if f"v{version}" in release_list:
             print(f"Error: Version {version} is already released")
             exit(1)
 
-
         if commit:
             # commit the changes
-            git_add = subprocess.run(["git", "add", "pyproject.toml", "src/kge/__init__.py"], check=True)
+            git_add = subprocess.run(
+                ["git", "add", "pyproject.toml", "src/kge/__init__.py"], check=True
+            )
             if git_add.returncode != 0:
                 print(f"Error: Failed to add changes to git")
                 exit(1)
-            git_commit = subprocess.run(["git", "commit", "-m", f"Bump version to {version}"], check=True)
+            git_commit = subprocess.run(
+                ["git", "commit", "-m", f"Bump version to {version}"], check=True
+            )
             if git_commit.returncode != 0:
                 print(f"Error: Failed to commit changes to git")
                 exit(1)
@@ -171,22 +180,27 @@ def get_new_version(current_version, bump_type, commit=False):
         print(f"Error: {e}")
         exit(1)
 
+
 def check_git_status():
     try:
         # Check if we're on main branch
         current_branch = subprocess.run(
-            ["git", "branch", "--show-current"], 
-            check=True, 
-            capture_output=True, 
-            text=True
+            ["git", "branch", "--show-current"],
+            check=True,
+            capture_output=True,
+            text=True,
         ).stdout.strip()
-        
+
         if current_branch != "main":
             print(f"Error: Not on main branch (currently on {current_branch})")
-            print("Please ensure your changes are merged to main before creating a release")
+            print(
+                "Please ensure your changes are merged to main before creating a release"
+            )
             return False
 
-        git_status = subprocess.run(["git", "status"], check=True, capture_output=True, text=True)
+        git_status = subprocess.run(
+            ["git", "status"], check=True, capture_output=True, text=True
+        )
         if "Changes to be committed" in git_status.stdout:
             print("Error: There are changes to be committed")
             return False
@@ -198,6 +212,7 @@ def check_git_status():
     except Exception as e:
         print(f"Error: {e}")
         return False
+
 
 def run_tests():
     try:
@@ -290,10 +305,14 @@ def main():
             print("No releases found on GitHub")
             exit(1)
         if not find_pypi_version(current_version):
-            print(f"Error: GitHub version {current_version} does not match PyPI version\nThis must be fixed manually before releasing")
+            print(
+                f"Error: GitHub version {current_version} does not match PyPI version\nThis must be fixed manually before releasing"
+            )
             exit(1)
         # Update version
-        new_version = get_new_version(current_version, bump_type=bump_type, commit=args.commit)
+        new_version = get_new_version(
+            current_version, bump_type=bump_type, commit=args.commit
+        )
         # Create release
         create_release(new_version, args.commit)
     except Exception as e:
