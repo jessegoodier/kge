@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import sys
 import time
 import argparse
@@ -583,14 +585,11 @@ class KubeEventsTUI(App[Optional[List[KubernetesEvent]]]):
             )
             return
 
-        if self.grouped_data:
-            sorted_owner_uids = sorted(
-                self.grouped_data.keys(),
-                key=lambda uid: self.grouped_data[uid]["latest_event_timestamp"],
-                reverse=True,
-            )
-        else:
-            sorted_owner_uids = []
+        sorted_owner_uids = sorted(
+            self.grouped_data.keys(),
+            key=lambda uid: self.grouped_data[uid]["latest_event_timestamp"],
+            reverse=True,
+        )
 
         self.all_events_by_owner_uid.clear()
         for owner_uid in sorted_owner_uids:
