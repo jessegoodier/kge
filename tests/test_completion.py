@@ -1,6 +1,5 @@
 import unittest
 from unittest.mock import patch, MagicMock
-import sys
 import warnings
 from kge.cli.main import (
     list_pods_for_completion,

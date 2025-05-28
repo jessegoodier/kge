@@ -1,7 +1,5 @@
 import unittest
 import time
-import os
-import subprocess
 from kubernetes import client, config
 from kge.cli.main import (
     get_events_for_pod,
@@ -11,7 +9,6 @@ from kge.cli.main import (
     get_pods,
     get_current_namespace,
     list_pods_for_completion,
-    CACHE_DURATION,
     pod_cache,
     failures_cache,
     load_k8s_config,

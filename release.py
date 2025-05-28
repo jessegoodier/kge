@@ -30,7 +30,7 @@ def find_pypi_version(github_version):
     try:
         # Get latest version from PyPI
         # https://pypi.org/pypi/kge-kubectl-get-events/json
-        pypi_url = f"https://pypi.org/pypi/kge-kubectl-get-events/json"
+        pypi_url = "https://pypi.org/pypi/kge-kubectl-get-events/json"
         pypi_response = requests.get(pypi_url)
         pypi_json = pypi_response.json()
         if pypi_json:
@@ -68,7 +68,7 @@ def check_version_match(version):
             print("__init__.py version: ", init_content)
             init_version = re.search(r'__version__ = "(.+)"', init_content).group(1)
         if version != pyproject_version or version != init_version:
-            print(f"Error: Version mismatch between pyproject.toml and __init__.py")
+            print("Error: Version mismatch between pyproject.toml and __init__.py")
             print(f"pyproject.toml: {pyproject_version}")
             print(f"__init__.py: {init_version}")
             exit(1)
@@ -105,17 +105,17 @@ def create_release(version, commit):
                 ["git", "add", "pyproject.toml", "src/kge/__init__.py"], check=True
             )
             if git_add.returncode != 0:
-                print(f"Error: Failed to add changes to git")
+                print("Error: Failed to add changes to git")
                 exit(1)
             git_commit = subprocess.run(
                 ["git", "commit", "-m", f"Bump version to {version}"], check=True
             )
             if git_commit.returncode != 0:
-                print(f"Error: Failed to commit changes to git")
+                print("Error: Failed to commit changes to git")
                 exit(1)
             git_push = subprocess.run(["git", "push"], check=True)
             if git_push.returncode != 0:
-                print(f"Error: Failed to push changes to git")
+                print("Error: Failed to push changes to git")
                 exit(1)
             # Check version match
             check_version_match(version)

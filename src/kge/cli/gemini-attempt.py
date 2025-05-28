@@ -31,20 +31,14 @@ class KubernetesEvent:
     def from_v1_event(cls, event: Any) -> "KubernetesEvent":
         """Create a KubernetesEvent from a V1Event object."""
         return cls(
-            namespace=event.metadata.namespace if event.metadata else None,
-            involved_object_name=(
-                event.involved_object.name if event.involved_object else None
-            ),
-            involved_object_kind=(
-                event.involved_object.kind if event.involved_object else None
-            ),
+            namespace=event.metadata.namespace,
+            involved_object_name=event.involved_object.name,
+            involved_object_kind=event.involved_object.kind,
             reason=event.reason,
             message=event.message,
             first_timestamp=event.first_timestamp,
             last_timestamp=event.last_timestamp,
-            api_version=(
-                event.involved_object.api_version if event.involved_object else None
-            ),
+            api_version=event.involved_object.api_version,
             type=event.type,
             count=event.count,
         )
