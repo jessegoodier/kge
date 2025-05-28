@@ -324,16 +324,12 @@ class KubernetesEventManager:
         for owner_data in grouped_by_owner_uid.values():
             owner_data["events"].sort(
                 key=lambda e: (
-                    e.last_timestamp or e.first_timestamp or datetime.min
-                ).replace(
-                    tzinfo=(
-                        timezone.utc
-                        if (
-                            e.last_timestamp or e.first_timestamp or datetime.min
-                        ).tzinfo
-                        is None
-                        else None
+                    (e.last_timestamp or e.first_timestamp or datetime.min).replace(
+                        tzinfo=timezone.utc
                     )
+                    if (e.last_timestamp or e.first_timestamp or datetime.min).tzinfo
+                    is None
+                    else (e.last_timestamp or e.first_timestamp or datetime.min)
                 ),
                 reverse=True,
             )
