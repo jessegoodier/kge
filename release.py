@@ -214,9 +214,21 @@ def check_git_status():
         return False
 
 
+def install_dev_package():
+    try:
+        subprocess.run(["uv", "pip", "install", "-e", "."], check=True)
+        print("Development package installed")
+        return True
+    except Exception as e:
+        print(f"Error installing development package: {e}")
+        return False
+
+
 def run_tests():
     try:
-        subprocess.run(["pytest"], check=True)
+        if not install_dev_package():
+            return False
+        subprocess.run(["uv", "run", "pytest"], check=True)
         print("Tests passed")
         return True
     except Exception as e:
@@ -227,9 +239,9 @@ def run_tests():
 def run_lint():
     try:
         # First try to fix automatically fixable issues
-        subprocess.run(["ruff", "check", "--fix", "src"], check=True)
+        subprocess.run(["uvx", "ruff", "check", "--fix", "src"], check=True)
         # Then run a final check
-        subprocess.run(["ruff", "check", "src"], check=True)
+        subprocess.run(["uvx", "ruff", "check", "src"], check=True)
         print("Lint passed")
         return True
     except Exception as e:
@@ -239,8 +251,21 @@ def run_lint():
 
 def run_format():
     try:
-        subprocess.run(["black", "src"], check=True)
+        subprocess.run(["uvx", "black", "src"], check=True)
+        subprocess.run(["uvx", "isort", "src"], check=True)
         print("Format passed")
+        return True
+    except Exception as e:
+        print(f"Error: {e}")
+        return False
+
+
+def run_type_check():
+    try:
+        if not install_dev_package():
+            return False
+        subprocess.run(["uvx", "mypy", "src"], check=True)
+        print("Type check passed")
         return True
     except Exception as e:
         print(f"Error: {e}")
@@ -249,10 +274,7 @@ def run_format():
 
 def run_build():
     try:
-        # First ensure build package is installed
-        subprocess.run(["uv", "pip", "install", "build"], check=True)
-        # Use python -m build instead of setup.py build
-        subprocess.run(["python", "-m", "build"], check=True)
+        subprocess.run(["uv", "run", "python", "-m", "build"], check=True)
         print("Build passed")
         return True
     except Exception as e:
@@ -295,6 +317,8 @@ def main():
         if not run_lint():
             exit(1)
         if not run_format():
+            exit(1)
+        if not run_type_check():
             exit(1)
         if not run_build():
             exit(1)
