@@ -540,7 +540,7 @@ class KubeEventsInteractiveSelector:
         lines.append(
             (
                 self.style_definitions["info"],  # Use the actual style string
-                "{:<15} {:<10} {:<15} {:<40} {:<20}\n".format(
+                "{:<15} {:<10} {:<15} {:<50} {:<20}\n".format(
                     "Time", "Type", "Reason", "Owner Resource", "Namespace"
                 ),
             )
@@ -565,7 +565,7 @@ class KubeEventsInteractiveSelector:
             reason_str = data["latest_event_reason"]
 
             # Construct the single line string first
-            line_content = "{:<15} {:<10} {:<15} {:<40} {:<20}".format(
+            line_content = "{:<15} {:<10} {:<15} {:<50} {:<20}".format(
                 time_str, type_str, reason_str, resource_name_str, owner_namespace_str
             )
 
@@ -679,7 +679,7 @@ def main():
             asyncio.to_thread(event_manager_instance.fetch_events, namespace_arg)
         )
         if not all_events:
-            console.print("[yellow]No events found from Kubernetes API.[/yellow]")
+            console.print(f"[yellow]No recent events found in the {namespace_arg} namespace.[/yellow]")
             sys.exit(0)
 
         console.print("[cyan]Grouping events by owner...[/cyan]")
