@@ -250,7 +250,7 @@ def run_format():
 def run_build():
     try:
         # First ensure build package is installed
-        subprocess.run(["pip", "install", "build"], check=True)
+        subprocess.run(["uv", "pip", "install", "build"], check=True)
         # Use python -m build instead of setup.py build
         subprocess.run(["python", "-m", "build"], check=True)
         print("Build passed")
