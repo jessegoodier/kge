@@ -1,13 +1,10 @@
 import argparse
 import asyncio
-from os import name
 import sys
-import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-from click import get_current_context
 import kubernetes
 import rich.box
 
@@ -15,7 +12,7 @@ import rich.box
 from prompt_toolkit import Application
 from prompt_toolkit.formatted_text import FormattedText, to_formatted_text
 from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.layout import HSplit, Layout, VSplit, Window
+from prompt_toolkit.layout import HSplit, Layout, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.styles import Style
 from rich.console import Console
@@ -627,10 +624,6 @@ class KubeEventsInteractiveSelector:
         self.result_events = application.run()
 
         return self.result_events
-
-
-def get_current_context() -> Optional[str]:
-    """Get the current Kubernetes context namespace."""
 
 
 def main():

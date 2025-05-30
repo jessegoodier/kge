@@ -226,7 +226,10 @@ def run_tests():
 
 def run_lint():
     try:
-        subprocess.run(["flake8", "src"], check=True)
+        # First try to fix automatically fixable issues
+        subprocess.run(["ruff", "check", "--fix", "src"], check=True)
+        # Then run a final check
+        subprocess.run(["ruff", "check", "src"], check=True)
         print("Lint passed")
         return True
     except Exception as e:
