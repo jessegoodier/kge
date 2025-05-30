@@ -1,3 +1,4 @@
+#! /usr/bin/env python3
 import argparse
 import asyncio
 import sys
@@ -488,10 +489,11 @@ class KubeEventsInteractiveSelector:
 
         # Define styles as actual prompt_toolkit style strings
         self.style_definitions = {
-            "selected-row": "bg:#ansiblue #ansiyellow",
+            "selected-row": "bg:#ansiblue #ansiyellow", # Original: blue bg, yellow text
             "header": "bold #ansimagenta",
             "normal-row": "",  # Default style (no special formatting)
             "info": "bold #ansicyan",
+            "type-warning-override-fg": "fg:#ffae00 bold",  # Orange foreground for non-Normal types + bold
         }
         self.style = Style.from_dict(self.style_definitions)
 
@@ -519,32 +521,33 @@ class KubeEventsInteractiveSelector:
 
     def _get_list_content(self) -> FormattedText:
         lines = []
-        # Use the actual style string from style_definitions
         lines.append(
             (
-                self.style_definitions["header"],
+                self.style_definitions["header"], # Use named style "header"
                 "Select an owner using ↑↓, press Enter to view details, 'q' to quit.\n",
             )
         )
 
         if not self.sorted_owner_uids:
             lines.append(
-                (self.style_definitions["info"], "No event groups to display.\n")
+                (self.style_definitions["info"], "No event groups to display.\n") # Use named style "info"
             )
             return to_formatted_text(lines)
 
-        # Header for the list (similar to Rich Table header)
+        header_style_str = self.style_definitions["info"] # Use named style "info" for header
+        # Adjusted column widths: Time 15, Type 10, Reason 25, Resource 50, Namespace 20
+        # Total width = 15 + 10 + 25 + 50 + 20 = 120
         lines.append(
             (
-                self.style_definitions["info"],  # Use the actual style string
-                "{:<15} {:<10} {:<15} {:<50} {:<20}\n".format(
+                header_style_str,
+                "{:<15} {:<10} {:<35} {:<50} {:<20}\n".format( # total width 135 should match the separator length
                     "Time", "Type", "Reason", "Owner Resource", "Namespace"
                 ),
             )
         )
         lines.append(
-            (self.style_definitions["info"], "-" * 105 + "\n")
-        )  # Separator, using 'info' style
+            (header_style_str, "-" * 135 + "\n") # -- Separator 
+        )
 
         for i, owner_uid in enumerate(self.sorted_owner_uids):
             data = self.grouped_data[owner_uid]
@@ -552,27 +555,27 @@ class KubeEventsInteractiveSelector:
             resource_name_str = (
                 f"{owner_info.get('kind', 'N/A')}/{owner_info.get('name', 'N/A')}"
             )
-            # Ensure owner_namespace_str is always a string.
-            owner_namespace_str = owner_info.get("namespace")
-            if owner_namespace_str is None:
-                owner_namespace_str = "cluster"
+            owner_namespace_str = owner_info.get("namespace", "cluster") or "cluster"
 
             time_str = self._format_relative_time(data["latest_event_timestamp"])
             type_str = data["latest_event_type"]
             reason_str = data["latest_event_reason"]
-
-            # Construct the single line string first
-            line_content = "{:<15} {:<10} {:<15} {:<50} {:<20}".format(
-                time_str, type_str, reason_str, resource_name_str, owner_namespace_str
-            )
-
-            # Get the actual style string based on selection
-            current_row_style = (
-                self.style_definitions["selected-row"]
-                if i == self.selected_index
-                else self.style_definitions["normal-row"]
-            )
-            lines.append((current_row_style, line_content + "\n"))
+            
+            is_selected = (i == self.selected_index)
+            
+            other_parts_style_str = self.style_definitions["selected-row"] if is_selected else self.style_definitions["normal-row"]
+            type_cell_style_str = other_parts_style_str
+            if type_str != "Normal":
+                type_cell_style_str = (type_cell_style_str + " " + self.style_definitions["type-warning-override-fg"]).strip()
+            
+            # Adjusted f-string formatting for the new column widths
+            current_line_parts = [
+                (other_parts_style_str.strip(), f"{time_str:<15} "),
+                (type_cell_style_str.strip(), f"{type_str:<10} "),
+                # Reason column width changed to 25 in the f-string format specifier below
+                (other_parts_style_str.strip(), f"{reason_str:<35} {resource_name_str:<50} {owner_namespace_str:<20}\n")
+            ]
+            lines.extend(current_line_parts)
 
         return to_formatted_text(lines)
 
@@ -592,15 +595,15 @@ class KubeEventsInteractiveSelector:
             if self.sorted_owner_uids:
                 selected_uid = self.sorted_owner_uids[self.selected_index]
                 self.result_events = self.grouped_data[selected_uid]["events"]
-                event.app.exit(self.result_events)  # <-- Fix: pass result
+                event.app.exit(self.result_events)
             else:
                 event.app.exit(None)
 
         @self.key_bindings.add("c-c", eager=True)  # type: ignore[misc]
         @self.key_bindings.add("q", eager=True)  # type: ignore[misc]
         def _(event: Any) -> None:
-            self.result_events = None  # Indicate no selection / user quit
-            event.app.exit(None)  # <-- Fix: pass None
+            self.result_events = None
+            event.app.exit(None)
 
     def run(self) -> Optional[List[KubernetesEvent]]:
         root_container = HSplit(
@@ -620,7 +623,6 @@ class KubeEventsInteractiveSelector:
             style=self.style,
         )
 
-        # Run the prompt_toolkit application
         self.result_events = application.run()
 
         return self.result_events
@@ -656,24 +658,31 @@ def main() -> None:
     try:
         event_manager_instance = KubernetesEventManager()
 
-        # Determine namespace logic
         if args.all:
-            namespace_arg = None  # None means all namespaces
-
+            namespace_arg = None
         elif args.namespace is not None:
-            namespace_arg = args.namespace  # Could be None, which means current context
+            namespace_arg = args.namespace
         else:
-            contexts = kubernetes.config.list_kube_config_contexts()
-            current_context = contexts[1]  # Get the current context from the tuple
-            namespace_arg = current_context.get("context", {}).get("namespace")
+            try:
+                _, current_context_dict = kubernetes.config.list_kube_config_contexts()
+                namespace_arg = current_context_dict.get("context", {}).get("namespace")
+                if not namespace_arg:
+                     console.print("[yellow]Current context does not have a namespace specified. Consider using -n <namespace> or --all.[/yellow]")
+                     # Defaulting to None will make fetch_events get all namespaces.
+                     namespace_arg = None 
+            except Exception as e:
+                console.print(f"[yellow]Could not determine current namespace: {e}. Defaulting to all namespaces.[/yellow]")
+                namespace_arg = None
+
 
         console.print("[cyan]Loading events from Kubernetes...[/cyan]")
         all_events: Optional[List[KubernetesEvent]] = asyncio.run(
             asyncio.to_thread(event_manager_instance.fetch_events, namespace_arg)
         )
         if not all_events:
+            ns_display = namespace_arg or "all"
             console.print(
-                f"[yellow]No recent events found in the {namespace_arg} namespace.[/yellow]"
+                f"[yellow]No recent events found in the {ns_display} namespace(s).[/yellow]"
             )
             sys.exit(0)
 
@@ -688,7 +697,6 @@ def main() -> None:
             )
             sys.exit(0)
 
-        # Run the prompt_toolkit interactive selector
         selector = KubeEventsInteractiveSelector(grouped_data=grouped_data)
         selected_owner_events_from_selector = selector.run()
 
