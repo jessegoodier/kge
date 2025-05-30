@@ -523,43 +523,71 @@ class KubeEventsInteractiveSelector:
         lines = []
         lines.append(
             (
-                self.style_definitions["header"], # Use named style "header"
+                self.style_definitions["header"],
                 "Select an owner using ↑↓, press Enter to view details, 'q' to quit.\n",
             )
         )
 
         if not self.sorted_owner_uids:
             lines.append(
-                (self.style_definitions["info"], "No event groups to display.\n") # Use named style "info"
+                (self.style_definitions["info"], "No event groups to display.\n")
             )
             return to_formatted_text(lines)
 
-        header_style_str = self.style_definitions["info"] # Use named style "info" for header
-        # Adjusted column widths: Time 15, Type 10, Reason 25, Resource 50, Namespace 20
-        # Total width = 15 + 10 + 25 + 50 + 20 = 120
+        # Calculate maximum widths for each column
+        max_time_width = 15  # Fixed width for time
+        max_type_width = 10  # Fixed width for type
+        max_reason_width = 15  # Initial width for reason
+        max_resource_width = 60  # Initial width for resource
+        max_namespace_width = 20  # Initial width for namespace
+
+        # Calculate actual maximum widths from data
+        for owner_uid in self.sorted_owner_uids:
+            data = self.grouped_data[owner_uid]
+            owner_info = data["owner_info"]
+            resource_name_str = f"{owner_info.get('kind', 'N/A')}/{owner_info.get('name', 'N/A')}"
+            owner_namespace_str = owner_info.get("namespace", "cluster") or "cluster"
+            reason_str = data["latest_event_reason"]
+
+            max_resource_width = max(max_resource_width, len(resource_name_str))
+            max_namespace_width = max(max_namespace_width, len(owner_namespace_str))
+            max_reason_width = max(max_reason_width, len(reason_str))
+
+        # Calculate total width
+        total_width = max_time_width + max_type_width + max_reason_width + max_resource_width + max_namespace_width + 8  # +8 for spaces between columns (4 gaps * 2 spaces)
+
+        # If total width exceeds 140, truncate reason column to 30 characters
+        if total_width > 140:
+            max_reason_width = 30
+            total_width = max_time_width + max_type_width + max_reason_width + max_resource_width + max_namespace_width + 8
+
+        header_style_str = self.style_definitions["info"]
+        # Create format string with dynamic widths
+        format_str = f"{{:<{max_time_width}}}  {{:<{max_type_width}}}  {{:<{max_reason_width}}}  {{:<{max_resource_width}}}  {{:<{max_namespace_width}}}\n"
+        
         lines.append(
             (
                 header_style_str,
-                "{:<15} {:<10} {:<35} {:<50} {:<20}\n".format( # total width 135 should match the separator length
-                    "Time", "Type", "Reason", "Owner Resource", "Namespace"
-                ),
+                format_str.format("Time", "Type", "Reason", "Owner Resource", "Namespace"),
             )
         )
         lines.append(
-            (header_style_str, "-" * 135 + "\n") # -- Separator 
+            (header_style_str, "-" * total_width + "\n")
         )
 
         for i, owner_uid in enumerate(self.sorted_owner_uids):
             data = self.grouped_data[owner_uid]
             owner_info = data["owner_info"]
-            resource_name_str = (
-                f"{owner_info.get('kind', 'N/A')}/{owner_info.get('name', 'N/A')}"
-            )
+            resource_name_str = f"{owner_info.get('kind', 'N/A')}/{owner_info.get('name', 'N/A')}"
             owner_namespace_str = owner_info.get("namespace", "cluster") or "cluster"
 
             time_str = self._format_relative_time(data["latest_event_timestamp"])
             type_str = data["latest_event_type"]
             reason_str = data["latest_event_reason"]
+            
+            # Truncate reason if needed
+            if len(reason_str) > max_reason_width:
+                reason_str = reason_str[:max_reason_width-3] + "..."
             
             is_selected = (i == self.selected_index)
             
@@ -568,12 +596,11 @@ class KubeEventsInteractiveSelector:
             if type_str != "Normal":
                 type_cell_style_str = (type_cell_style_str + " " + self.style_definitions["type-warning-override-fg"]).strip()
             
-            # Adjusted f-string formatting for the new column widths
+            # Use the dynamic format string
             current_line_parts = [
-                (other_parts_style_str.strip(), f"{time_str:<15} "),
-                (type_cell_style_str.strip(), f"{type_str:<10} "),
-                # Reason column width changed to 25 in the f-string format specifier below
-                (other_parts_style_str.strip(), f"{reason_str:<35} {resource_name_str:<50} {owner_namespace_str:<20}\n")
+                (other_parts_style_str.strip(), f"{time_str:<{max_time_width}}  "),
+                (type_cell_style_str.strip(), f"{type_str:<{max_type_width}}  "),
+                (other_parts_style_str.strip(), f"{reason_str:<{max_reason_width}}  {resource_name_str:<{max_resource_width}}  {owner_namespace_str:<{max_namespace_width}}\n")
             ]
             lines.extend(current_line_parts)
 
