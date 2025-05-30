@@ -1,11 +1,13 @@
 import argparse
 import asyncio
+from os import name
 import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
+from click import get_current_context
 import kubernetes
 import rich.box
 
@@ -627,11 +629,22 @@ class KubeEventsInteractiveSelector:
         return self.result_events
 
 
+def get_current_context() -> Optional[str]:
+    """Get the current Kubernetes context namespace."""
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="View Kubernetes events with an interactive list, grouped by owner."
     )
-    parser.add_argument("-n", "--namespace", help="Namespace to fetch events from")
+    parser.add_argument(
+        "-A", "--all", action="store_true", help="Fetch events from all namespaces"
+    )
+    parser.add_argument(
+        "-n",
+        "--namespace",
+        help="Namespace to fetch events from (default: current context namespace)",
+    )
     parser.add_argument(
         "-r", "--reason", help="Filter selected owner's events by reason"
     )
@@ -650,11 +663,21 @@ def main():
     try:
         event_manager_instance = KubernetesEventManager()
 
+        # Determine namespace logic
+        if args.all:
+            namespace_arg = None  # None means all namespaces
+
+        elif args.namespace is not None:
+            namespace_arg = args.namespace  # Could be None, which means current context
+        else:
+            contexts = kubernetes.config.list_kube_config_contexts()
+            current_context = contexts[1]  # Get the current context from the tuple
+            namespace_arg = current_context.get('context', {}).get('namespace')
+
         console.print("[cyan]Loading events from Kubernetes...[/cyan]")
         all_events: Optional[List[KubernetesEvent]] = asyncio.run(
-            asyncio.to_thread(event_manager_instance.fetch_events, args.namespace)
+            asyncio.to_thread(event_manager_instance.fetch_events, namespace_arg)
         )
-
         if not all_events:
             console.print("[yellow]No events found from Kubernetes API.[/yellow]")
             sys.exit(0)
