@@ -672,14 +672,16 @@ def main():
         else:
             contexts = kubernetes.config.list_kube_config_contexts()
             current_context = contexts[1]  # Get the current context from the tuple
-            namespace_arg = current_context.get('context', {}).get('namespace')
+            namespace_arg = current_context.get("context", {}).get("namespace")
 
         console.print("[cyan]Loading events from Kubernetes...[/cyan]")
         all_events: Optional[List[KubernetesEvent]] = asyncio.run(
             asyncio.to_thread(event_manager_instance.fetch_events, namespace_arg)
         )
         if not all_events:
-            console.print(f"[yellow]No recent events found in the {namespace_arg} namespace.[/yellow]")
+            console.print(
+                f"[yellow]No recent events found in the {namespace_arg} namespace.[/yellow]"
+            )
             sys.exit(0)
 
         console.print("[cyan]Grouping events by owner...[/cyan]")
