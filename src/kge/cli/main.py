@@ -5,19 +5,19 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-import kubernetes
-import rich.box
+import kubernetes  # type: ignore
+import rich.box  # type: ignore
 
 # Prompt-toolkit imports
-from prompt_toolkit import Application
-from prompt_toolkit.formatted_text import FormattedText, to_formatted_text
-from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.layout import HSplit, Layout, Window
-from prompt_toolkit.layout.controls import FormattedTextControl
-from prompt_toolkit.styles import Style
-from rich.console import Console
-from rich.table import Table
-from rich.text import Text
+from prompt_toolkit import Application  # type: ignore
+from prompt_toolkit.formatted_text import FormattedText, to_formatted_text  # type: ignore
+from prompt_toolkit.key_binding import KeyBindings  # type: ignore
+from prompt_toolkit.layout import HSplit, Layout, Window  # type: ignore
+from prompt_toolkit.layout.controls import FormattedTextControl  # type: ignore
+from prompt_toolkit.styles import Style  # type: ignore
+from rich.console import Console  # type: ignore
+from rich.table import Table  # type: ignore
+from rich.text import Text  # type: ignore
 
 # Initialize Rich Console
 console = Console()
@@ -92,7 +92,7 @@ class KubernetesEvent:
 class KubernetesEventManager:
     """Manages Kubernetes events fetching and processing."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._object_fetch_cache: Dict[Tuple, Optional[Any]] = (
             {}
         )  # Cache for fetched K8s objects
@@ -101,7 +101,7 @@ class KubernetesEventManager:
         )  # Cache for resolved owners
         self._init_kubernetes_client()
 
-    def _init_kubernetes_client(self):
+    def _init_kubernetes_client(self) -> None:
         """Initialize the Kubernetes client with proper configuration."""
         try:
             # Try to load in-cluster config first
@@ -399,7 +399,7 @@ class KubernetesEventManager:
 
     def display_events_table(
         self, events: List[KubernetesEvent], show_timestamps: bool = False
-    ):
+    ) -> None:
         if not events:
             console.print(
                 "[yellow]No events found to display for the selected owner after filtering.[/yellow]"
@@ -423,7 +423,7 @@ class KubernetesEventManager:
         now = datetime.now(timezone.utc)
 
         # Ensure events are sorted for display; grouping already sorts them, but this is a safeguard
-        def ensure_aware(dt):
+        def ensure_aware(dt: Optional[datetime]) -> datetime:
             if dt is None:
                 return datetime.min.replace(tzinfo=timezone.utc)
             if dt.tzinfo is None:
@@ -576,19 +576,19 @@ class KubeEventsInteractiveSelector:
 
         return to_formatted_text(lines)
 
-    def _setup_key_bindings(self):
-        @self.key_bindings.add("up")
-        def _(event):
+    def _setup_key_bindings(self) -> None:
+        @self.key_bindings.add("up")  # type: ignore[misc]
+        def _(event: Any) -> None:
             self.selected_index = max(0, self.selected_index - 1)
 
-        @self.key_bindings.add("down")
-        def _(event):
+        @self.key_bindings.add("down")  # type: ignore[misc]
+        def _(event: Any) -> None:
             self.selected_index = min(
                 len(self.sorted_owner_uids) - 1, self.selected_index + 1
             )
 
-        @self.key_bindings.add("enter")
-        def _(event):
+        @self.key_bindings.add("enter")  # type: ignore[misc]
+        def _(event: Any) -> None:
             if self.sorted_owner_uids:
                 selected_uid = self.sorted_owner_uids[self.selected_index]
                 self.result_events = self.grouped_data[selected_uid]["events"]
@@ -596,9 +596,9 @@ class KubeEventsInteractiveSelector:
             else:
                 event.app.exit(None)
 
-        @self.key_bindings.add("c-c", eager=True)  # Ctrl+C
-        @self.key_bindings.add("q", eager=True)  # 'q' to quit
-        def _(event):
+        @self.key_bindings.add("c-c", eager=True)  # type: ignore[misc]
+        @self.key_bindings.add("q", eager=True)  # type: ignore[misc]
+        def _(event: Any) -> None:
             self.result_events = None  # Indicate no selection / user quit
             event.app.exit(None)  # <-- Fix: pass None
 
@@ -626,7 +626,7 @@ class KubeEventsInteractiveSelector:
         return self.result_events
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="View Kubernetes events with an interactive list, grouped by owner."
     )
