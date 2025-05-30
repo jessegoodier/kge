@@ -1,4 +1,8 @@
 temp*
+.DS_Store
+.vscode/
+uv.lock
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

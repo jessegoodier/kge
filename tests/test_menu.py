@@ -1,5 +1,3 @@
-import pytest
-from unittest.mock import MagicMock, patch
 from kge.cli.main import KubeEventsInteractiveSelector
 from datetime import datetime, timezone
 
