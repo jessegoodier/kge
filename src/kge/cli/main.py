@@ -418,10 +418,7 @@ class KubernetesEventManager:
         table.add_column("Time", no_wrap=True)
         table.add_column("Type", no_wrap=True)
         table.add_column("Reason", no_wrap=True)
-        if show_all_namespaces:
-            table.add_column("Namespace/Type/Involved Object", no_wrap=True)
-        else:
-            table.add_column("Type/Involved Object", no_wrap=True)
+        table.add_column("Type/Involved Object", no_wrap=True)
         table.add_column("Message")
 
         now = datetime.now(timezone.utc)
@@ -465,10 +462,7 @@ class KubernetesEventManager:
                     timestamp_str = f"{delta.seconds // 60}m ago"
                 else:
                     timestamp_str = f"{delta.seconds}s ago"
-            if show_all_namespaces:
-                resource_str = f"{event.namespace or 'cluster'}/{event.involved_object_kind or 'UnknownKind'}/{event.involved_object_name or 'UnknownName'}"
-            else:
-                resource_str = f"{event.involved_object_kind or 'UnknownKind'}/{event.involved_object_name or 'UnknownName'}"
+            resource_str = f"{event.involved_object_kind or 'UnknownKind'}/{event.involved_object_name or 'UnknownName'}"
             table.add_row(
                 Text(timestamp_str, style="cyan"),
                 Text(event.type or "N/A", style="red" if event.type and event.type != "Normal" else "white"),
@@ -577,12 +571,12 @@ class KubeEventsInteractiveSelector:
         # Calculate total width
         if self.show_all_namespaces:
             total_width = (
-                max_time_width
+                max_namespace_width
+                + max_time_width
                 + max_type_width
                 + max_reason_width
                 + max_resource_width
-                + max_namespace_width
-                + 8
+                + 10
             )
         else:
             total_width = (
@@ -598,12 +592,12 @@ class KubeEventsInteractiveSelector:
             max_reason_width = 30
             if self.show_all_namespaces:
                 total_width = (
-                    max_time_width
+                    max_namespace_width
+                    + max_time_width
                     + max_type_width
                     + max_reason_width
                     + max_resource_width
-                    + max_namespace_width
-                    + 8
+                    + 10
                 )
             else:
                 total_width = (
@@ -617,9 +611,9 @@ class KubeEventsInteractiveSelector:
         header_style_str = self.style_definitions["info"]
         # Create format string with dynamic widths
         if self.show_all_namespaces:
-            format_str = f"{{:<{max_time_width}}}  {{:<{max_type_width}}}  {{:<{max_reason_width}}}  {{:<{max_resource_width}}}  {{:<{max_namespace_width}}}\n"
+            format_str = f"{{:<{max_namespace_width}}}  {{:<{max_time_width}}}  {{:<{max_type_width}}}  {{:<{max_reason_width}}}  {{:<{max_resource_width}}}\n"
             header = format_str.format(
-                "Time", "Type", "Reason", "Owner Resource", "Namespace"
+                "Namespace", "Time", "Type", "Reason", "Owner Resource"
             )
         else:
             format_str = f"{{:<{max_time_width}}}  {{:<{max_type_width}}}  {{:<{max_reason_width}}}  {{:<{max_resource_width}}}\n"
@@ -664,11 +658,12 @@ class KubeEventsInteractiveSelector:
             # Use the dynamic format string
             if self.show_all_namespaces:
                 current_line_parts = [
+                    (other_parts_style_str.strip(), f"{owner_namespace_str:<{max_namespace_width}}  "),
                     (other_parts_style_str.strip(), f"{time_str:<{max_time_width}}  "),
                     (type_cell_style_str.strip(), f"{type_str:<{max_type_width}}  "),
                     (
                         other_parts_style_str.strip(),
-                        f"{reason_str:<{max_reason_width}}  {resource_name_str:<{max_resource_width}}  {owner_namespace_str:<{max_namespace_width}}\n",
+                        f"{reason_str:<{max_reason_width}}  {resource_name_str:<{max_resource_width}}\n",
                     ),
                 ]
             else:
@@ -813,8 +808,9 @@ def main() -> None:
         if selected_owner_events_from_selector:
             console.print(
                 f"\n[white]Detailed Events for[/white]"
-                f"[blue] {selected_owner_events_from_selector[0].involved_object_kind} "
-                f"{selected_owner_events_from_selector[0].involved_object_name}[/blue]"
+                f"[cyan] {selected_owner_events_from_selector[0].involved_object_kind or 'UnknownKind'} "
+                f"{selected_owner_events_from_selector[0].involved_object_name}[/cyan]"
+                f"[white] in namespace:[/white] [cyan]{selected_owner_events_from_selector[0].namespace or 'cluster'}[/cyan]"
             )
             filtered_selected_events = event_manager_instance.filter_events(
                 selected_owner_events_from_selector,
