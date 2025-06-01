@@ -94,12 +94,12 @@ class KubernetesEventManager:
     """Manages Kubernetes events fetching and processing."""
 
     def __init__(self) -> None:
-        self._object_fetch_cache: Dict[Tuple, Optional[Any]] = (
-            {}
-        )  # Cache for fetched K8s objects
-        self._owner_resolution_cache: Dict[Tuple, Dict[str, str]] = (
-            {}
-        )  # Cache for resolved owners
+        self._object_fetch_cache: Dict[
+            Tuple, Optional[Any]
+        ] = {}  # Cache for fetched K8s objects
+        self._owner_resolution_cache: Dict[
+            Tuple, Dict[str, str]
+        ] = {}  # Cache for resolved owners
         self._init_kubernetes_client()
 
     def _init_kubernetes_client(self) -> None:
@@ -311,9 +311,9 @@ class KubernetesEventManager:
                     current_event_ts
                     > grouped_by_owner_uid[owner_uid_str]["latest_event_timestamp"]
                 ):
-                    grouped_by_owner_uid[owner_uid_str][
-                        "latest_event_timestamp"
-                    ] = current_event_ts
+                    grouped_by_owner_uid[owner_uid_str]["latest_event_timestamp"] = (
+                        current_event_ts
+                    )
                     grouped_by_owner_uid[owner_uid_str]["latest_event_type"] = (
                         event.type or "N/A"
                     )
@@ -474,7 +474,9 @@ class KubernetesEventManager:
 
 
 class KubeEventsInteractiveSelector:
-    def __init__(self, grouped_data: Dict[str, Dict[str, Any]], show_timestamps: bool = False):
+    def __init__(
+        self, grouped_data: Dict[str, Dict[str, Any]], show_timestamps: bool = False
+    ):
         if show_timestamps:
             sort_reverse = False
         else:
@@ -484,7 +486,8 @@ class KubeEventsInteractiveSelector:
         self.sorted_owner_uids = sorted(
             self.grouped_data.keys(),
             key=lambda uid: (
-                self.grouped_data[uid]["latest_event_timestamp"] or datetime.min.replace(tzinfo=timezone.utc)
+                self.grouped_data[uid]["latest_event_timestamp"]
+                or datetime.min.replace(tzinfo=timezone.utc)
             ),
             reverse=sort_reverse,
         )
@@ -496,7 +499,7 @@ class KubeEventsInteractiveSelector:
 
         # Define styles as actual prompt_toolkit style strings
         self.style_definitions = {
-            "selected-row": "bg:#ansiblue #ansiyellow", # Original: blue bg, yellow text
+            "selected-row": "bg:#ansiblue #ansiyellow",  # Original: blue bg, yellow text
             "header": "bold #ansimagenta",
             "normal-row": "",  # Default style (no special formatting)
             "info": "bold #ansicyan",
@@ -554,7 +557,9 @@ class KubeEventsInteractiveSelector:
         for owner_uid in self.sorted_owner_uids:
             data = self.grouped_data[owner_uid]
             owner_info = data["owner_info"]
-            resource_name_str = f"{owner_info.get('kind', 'N/A')}/{owner_info.get('name', 'N/A')}"
+            resource_name_str = (
+                f"{owner_info.get('kind', 'N/A')}/{owner_info.get('name', 'N/A')}"
+            )
             owner_namespace_str = owner_info.get("namespace", "cluster") or "cluster"
             reason_str = data["latest_event_reason"]
 
@@ -563,53 +568,80 @@ class KubeEventsInteractiveSelector:
             max_reason_width = max(max_reason_width, len(reason_str))
 
         # Calculate total width
-        total_width = max_time_width + max_type_width + max_reason_width + max_resource_width + max_namespace_width + 8  # +8 for spaces between columns (4 gaps * 2 spaces)
+        total_width = (
+            max_time_width
+            + max_type_width
+            + max_reason_width
+            + max_resource_width
+            + max_namespace_width
+            + 8
+        )  # +8 for spaces between columns (4 gaps * 2 spaces)
 
         # If total width exceeds 140, truncate reason column to 30 characters
         if total_width > 140:
             max_reason_width = 30
-            total_width = max_time_width + max_type_width + max_reason_width + max_resource_width + max_namespace_width + 8
+            total_width = (
+                max_time_width
+                + max_type_width
+                + max_reason_width
+                + max_resource_width
+                + max_namespace_width
+                + 8
+            )
 
         header_style_str = self.style_definitions["info"]
         # Create format string with dynamic widths
         format_str = f"{{:<{max_time_width}}}  {{:<{max_type_width}}}  {{:<{max_reason_width}}}  {{:<{max_resource_width}}}  {{:<{max_namespace_width}}}\n"
-        
+
         lines.append(
             (
                 header_style_str,
-                format_str.format("Time", "Type", "Reason", "Owner Resource", "Namespace"),
+                format_str.format(
+                    "Time", "Type", "Reason", "Owner Resource", "Namespace"
+                ),
             )
         )
-        lines.append(
-            (header_style_str, "-" * total_width + "\n")
-        )
+        lines.append((header_style_str, "-" * total_width + "\n"))
 
         for i, owner_uid in enumerate(self.sorted_owner_uids):
             data = self.grouped_data[owner_uid]
             owner_info = data["owner_info"]
-            resource_name_str = f"{owner_info.get('kind', 'N/A')}/{owner_info.get('name', 'N/A')}"
+            resource_name_str = (
+                f"{owner_info.get('kind', 'N/A')}/{owner_info.get('name', 'N/A')}"
+            )
             owner_namespace_str = owner_info.get("namespace", "cluster") or "cluster"
 
             time_str = self._format_relative_time(data["latest_event_timestamp"])
             type_str = data["latest_event_type"]
             reason_str = data["latest_event_reason"]
-            
+
             # Truncate reason if needed
             if len(reason_str) > max_reason_width:
-                reason_str = reason_str[:max_reason_width-3] + "..."
-            
-            is_selected = (i == self.selected_index)
-            
-            other_parts_style_str = self.style_definitions["selected-row"] if is_selected else self.style_definitions["normal-row"]
+                reason_str = reason_str[: max_reason_width - 3] + "..."
+
+            is_selected = i == self.selected_index
+
+            other_parts_style_str = (
+                self.style_definitions["selected-row"]
+                if is_selected
+                else self.style_definitions["normal-row"]
+            )
             type_cell_style_str = other_parts_style_str
             if type_str != "Normal":
-                type_cell_style_str = (type_cell_style_str + " " + self.style_definitions["type-warning-override-fg"]).strip()
-            
+                type_cell_style_str = (
+                    type_cell_style_str
+                    + " "
+                    + self.style_definitions["type-warning-override-fg"]
+                ).strip()
+
             # Use the dynamic format string
             current_line_parts = [
                 (other_parts_style_str.strip(), f"{time_str:<{max_time_width}}  "),
                 (type_cell_style_str.strip(), f"{type_str:<{max_type_width}}  "),
-                (other_parts_style_str.strip(), f"{reason_str:<{max_reason_width}}  {resource_name_str:<{max_resource_width}}  {owner_namespace_str:<{max_namespace_width}}\n")
+                (
+                    other_parts_style_str.strip(),
+                    f"{reason_str:<{max_reason_width}}  {resource_name_str:<{max_resource_width}}  {owner_namespace_str:<{max_namespace_width}}\n",
+                ),
             ]
             lines.extend(current_line_parts)
 
@@ -703,13 +735,16 @@ def main() -> None:
                 _, current_context_dict = kubernetes.config.list_kube_config_contexts()
                 namespace_arg = current_context_dict.get("context", {}).get("namespace")
                 if not namespace_arg:
-                     console.print("[yellow]Current context does not have a namespace specified. Consider using -n <namespace> or --all.[/yellow]")
-                     # Defaulting to None will make fetch_events get all namespaces.
-                     namespace_arg = None 
+                    console.print(
+                        "[yellow]Current context does not have a namespace specified. Consider using -n <namespace> or --all.[/yellow]"
+                    )
+                    # Defaulting to None will make fetch_events get all namespaces.
+                    namespace_arg = None
             except Exception as e:
-                console.print(f"[yellow]Could not determine current namespace: {e}. Defaulting to all namespaces.[/yellow]")
+                console.print(
+                    f"[yellow]Could not determine current namespace: {e}. Defaulting to all namespaces.[/yellow]"
+                )
                 namespace_arg = None
-
 
         console.print("[cyan]Loading events from Kubernetes...[/cyan]")
         all_events: Optional[List[KubernetesEvent]] = asyncio.run(
@@ -733,12 +768,16 @@ def main() -> None:
             )
             sys.exit(0)
 
-        selector = KubeEventsInteractiveSelector(grouped_data=grouped_data, show_timestamps=args.show_timestamps)
+        selector = KubeEventsInteractiveSelector(
+            grouped_data=grouped_data, show_timestamps=args.show_timestamps
+        )
         selected_owner_events_from_selector = selector.run()
 
         if selected_owner_events_from_selector:
             console.print(
-                "\n[bold magenta]--- Detailed Events for Selected Owner ---[/bold magenta]"
+                f"\n[bold magenta]Detailed Events for[/bold magenta]"
+                f"[bold blue] {selected_owner_events_from_selector[0].involved_object_kind} "
+                f"{selected_owner_events_from_selector[0].involved_object_name}[/bold blue]"
             )
             filtered_selected_events = event_manager_instance.filter_events(
                 selected_owner_events_from_selector,
