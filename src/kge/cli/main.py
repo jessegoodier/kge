@@ -474,12 +474,19 @@ class KubernetesEventManager:
 
 
 class KubeEventsInteractiveSelector:
-    def __init__(self, grouped_data: Dict[str, Dict[str, Any]]):
+    def __init__(self, grouped_data: Dict[str, Dict[str, Any]], show_timestamps: bool = False):
+        if show_timestamps:
+            sort_reverse = False
+        else:
+            sort_reverse = True
         self.grouped_data = grouped_data
+        self.show_timestamps = show_timestamps
         self.sorted_owner_uids = sorted(
             self.grouped_data.keys(),
-            key=lambda uid: self.grouped_data[uid]["latest_event_timestamp"],
-            reverse=True,
+            key=lambda uid: (
+                self.grouped_data[uid]["latest_event_timestamp"] or datetime.min.replace(tzinfo=timezone.utc)
+            ),
+            reverse=sort_reverse,
         )
         self.selected_index = 0
         self.result_events: Optional[List[KubernetesEvent]] = None
@@ -505,6 +512,8 @@ class KubeEventsInteractiveSelector:
             if timestamp.tzinfo is None
             else timestamp
         )
+        if self.show_timestamps:
+            return str(ts_aware)
         now = datetime.now(timezone.utc)
         delta = now - ts_aware
         if delta.total_seconds() < 0:
@@ -535,7 +544,7 @@ class KubeEventsInteractiveSelector:
             return to_formatted_text(lines)
 
         # Calculate maximum widths for each column
-        max_time_width = 15  # Fixed width for time
+        max_time_width = 27 if self.show_timestamps else 15  # Wider for timestamps
         max_type_width = 10  # Fixed width for type
         max_reason_width = 15  # Initial width for reason
         max_resource_width = 60  # Initial width for resource
@@ -724,7 +733,7 @@ def main() -> None:
             )
             sys.exit(0)
 
-        selector = KubeEventsInteractiveSelector(grouped_data=grouped_data)
+        selector = KubeEventsInteractiveSelector(grouped_data=grouped_data, show_timestamps=args.show_timestamps)
         selected_owner_events_from_selector = selector.run()
 
         if selected_owner_events_from_selector:
