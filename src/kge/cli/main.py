@@ -399,7 +399,7 @@ class KubernetesEventManager:
         return filtered_events
 
     def display_events_table(
-        self, events: List[KubernetesEvent], show_timestamps: bool = False
+        self, events: List[KubernetesEvent], show_timestamps: bool = False, show_all_namespaces: bool = False
     ) -> None:
         if not events:
             console.print(
@@ -418,7 +418,10 @@ class KubernetesEventManager:
         table.add_column("Time", no_wrap=True)
         table.add_column("Type", no_wrap=True)
         table.add_column("Reason", no_wrap=True)
-        table.add_column("Namespace/Type/Involved Object", no_wrap=True)
+        if show_all_namespaces:
+            table.add_column("Namespace/Type/Involved Object", no_wrap=True)
+        else:
+            table.add_column("Type/Involved Object", no_wrap=True)
         table.add_column("Message")
 
         now = datetime.now(timezone.utc)
@@ -462,7 +465,10 @@ class KubernetesEventManager:
                     timestamp_str = f"{delta.seconds // 60}m ago"
                 else:
                     timestamp_str = f"{delta.seconds}s ago"
-            resource_str = f"{event.namespace or 'cluster'}/{event.involved_object_kind or 'UnknownKind'}/{event.involved_object_name or 'UnknownName'}"
+            if show_all_namespaces:
+                resource_str = f"{event.namespace or 'cluster'}/{event.involved_object_kind or 'UnknownKind'}/{event.involved_object_name or 'UnknownName'}"
+            else:
+                resource_str = f"{event.involved_object_kind or 'UnknownKind'}/{event.involved_object_name or 'UnknownName'}"
             table.add_row(
                 Text(timestamp_str, style="cyan"),
                 Text(event.type or "N/A", style="red" if event.type and event.type != "Normal" else "white"),
@@ -475,7 +481,7 @@ class KubernetesEventManager:
 
 class KubeEventsInteractiveSelector:
     def __init__(
-        self, grouped_data: Dict[str, Dict[str, Any]], show_timestamps: bool = False
+        self, grouped_data: Dict[str, Dict[str, Any]], show_timestamps: bool = False, show_all_namespaces: bool = False
     ):
         if show_timestamps:
             sort_reverse = False
@@ -483,6 +489,7 @@ class KubeEventsInteractiveSelector:
             sort_reverse = True
         self.grouped_data = grouped_data
         self.show_timestamps = show_timestamps
+        self.show_all_namespaces = show_all_namespaces
         self.sorted_owner_uids = sorted(
             self.grouped_data.keys(),
             key=lambda uid: (
@@ -568,18 +575,7 @@ class KubeEventsInteractiveSelector:
             max_reason_width = max(max_reason_width, len(reason_str))
 
         # Calculate total width
-        total_width = (
-            max_time_width
-            + max_type_width
-            + max_reason_width
-            + max_resource_width
-            + max_namespace_width
-            + 8
-        )  # +8 for spaces between columns (4 gaps * 2 spaces)
-
-        # If total width exceeds 140, truncate reason column to 30 characters
-        if total_width > 140:
-            max_reason_width = 30
+        if self.show_all_namespaces:
             total_width = (
                 max_time_width
                 + max_type_width
@@ -588,19 +584,50 @@ class KubeEventsInteractiveSelector:
                 + max_namespace_width
                 + 8
             )
+        else:
+            total_width = (
+                max_time_width
+                + max_type_width
+                + max_reason_width
+                + max_resource_width
+                + 6
+            )
+
+        # If total width exceeds 140, truncate reason column to 30 characters
+        if total_width > 140:
+            max_reason_width = 30
+            if self.show_all_namespaces:
+                total_width = (
+                    max_time_width
+                    + max_type_width
+                    + max_reason_width
+                    + max_resource_width
+                    + max_namespace_width
+                    + 8
+                )
+            else:
+                total_width = (
+                    max_time_width
+                    + max_type_width
+                    + max_reason_width
+                    + max_resource_width
+                    + 6
+                )
 
         header_style_str = self.style_definitions["info"]
         # Create format string with dynamic widths
-        format_str = f"{{:<{max_time_width}}}  {{:<{max_type_width}}}  {{:<{max_reason_width}}}  {{:<{max_resource_width}}}  {{:<{max_namespace_width}}}\n"
-
-        lines.append(
-            (
-                header_style_str,
-                format_str.format(
-                    "Time", "Type", "Reason", "Owner Resource", "Namespace"
-                ),
+        if self.show_all_namespaces:
+            format_str = f"{{:<{max_time_width}}}  {{:<{max_type_width}}}  {{:<{max_reason_width}}}  {{:<{max_resource_width}}}  {{:<{max_namespace_width}}}\n"
+            header = format_str.format(
+                "Time", "Type", "Reason", "Owner Resource", "Namespace"
             )
-        )
+        else:
+            format_str = f"{{:<{max_time_width}}}  {{:<{max_type_width}}}  {{:<{max_reason_width}}}  {{:<{max_resource_width}}}\n"
+            header = format_str.format(
+                "Time", "Type", "Reason", "Owner Resource"
+            )
+
+        lines.append((header_style_str, header))
         lines.append((header_style_str, "-" * total_width + "\n"))
 
         for i, owner_uid in enumerate(self.sorted_owner_uids):
@@ -635,14 +662,24 @@ class KubeEventsInteractiveSelector:
                 ).strip()
 
             # Use the dynamic format string
-            current_line_parts = [
-                (other_parts_style_str.strip(), f"{time_str:<{max_time_width}}  "),
-                (type_cell_style_str.strip(), f"{type_str:<{max_type_width}}  "),
-                (
-                    other_parts_style_str.strip(),
-                    f"{reason_str:<{max_reason_width}}  {resource_name_str:<{max_resource_width}}  {owner_namespace_str:<{max_namespace_width}}\n",
-                ),
-            ]
+            if self.show_all_namespaces:
+                current_line_parts = [
+                    (other_parts_style_str.strip(), f"{time_str:<{max_time_width}}  "),
+                    (type_cell_style_str.strip(), f"{type_str:<{max_type_width}}  "),
+                    (
+                        other_parts_style_str.strip(),
+                        f"{reason_str:<{max_reason_width}}  {resource_name_str:<{max_resource_width}}  {owner_namespace_str:<{max_namespace_width}}\n",
+                    ),
+                ]
+            else:
+                current_line_parts = [
+                    (other_parts_style_str.strip(), f"{time_str:<{max_time_width}}  "),
+                    (type_cell_style_str.strip(), f"{type_str:<{max_type_width}}  "),
+                    (
+                        other_parts_style_str.strip(),
+                        f"{reason_str:<{max_reason_width}}  {resource_name_str:<{max_resource_width}}\n",
+                    ),
+                ]
             lines.extend(current_line_parts)
 
         return to_formatted_text(lines)
@@ -769,7 +806,7 @@ def main() -> None:
             sys.exit(0)
 
         selector = KubeEventsInteractiveSelector(
-            grouped_data=grouped_data, show_timestamps=args.show_timestamps
+            grouped_data=grouped_data, show_timestamps=args.show_timestamps, show_all_namespaces=args.all
         )
         selected_owner_events_from_selector = selector.run()
 
@@ -786,7 +823,7 @@ def main() -> None:
                 type_filter=args.type,
             )
             event_manager_instance.display_events_table(
-                filtered_selected_events, args.show_timestamps
+                filtered_selected_events, args.show_timestamps, args.all
             )
         else:
             console.print(
