@@ -408,7 +408,7 @@ class KubernetesEventManager:
             return
         table = Table(
             show_header=True,
-            header_style="bold magenta",
+            header_style="bold white",
             box=rich.box.ROUNDED,
             show_lines=True,
             padding=(0, 1),
@@ -418,7 +418,7 @@ class KubernetesEventManager:
         table.add_column("Time", no_wrap=True)
         table.add_column("Type", no_wrap=True)
         table.add_column("Reason", no_wrap=True)
-        table.add_column("Resource (Involved)", no_wrap=True)
+        table.add_column("Namespace/Type/Involved Object", no_wrap=True)
         table.add_column("Message")
 
         now = datetime.now(timezone.utc)
@@ -465,10 +465,10 @@ class KubernetesEventManager:
             resource_str = f"{event.namespace or 'cluster'}/{event.involved_object_kind or 'UnknownKind'}/{event.involved_object_name or 'UnknownName'}"
             table.add_row(
                 Text(timestamp_str, style="cyan"),
-                Text(event.type or "N/A", style="yellow"),
-                Text(event.reason or "N/A", style="red"),
-                Text(resource_str, style="blue"),
-                Text(event.message or "", style="white"),
+                Text(event.type or "N/A", style="red" if event.type and event.type != "Normal" else "white"),
+                Text(event.reason or "N/A", style="cyan"),
+                Text(resource_str, style="white"),
+                Text(event.message or "", style="red" if event.type and event.type != "Normal" else "white"),
             )
         console.print(table)
 
@@ -503,7 +503,7 @@ class KubeEventsInteractiveSelector:
             "header": "bold #ansimagenta",
             "normal-row": "",  # Default style (no special formatting)
             "info": "bold #ansicyan",
-            "type-warning-override-fg": "fg:#ffae00 bold",  # Orange foreground for non-Normal types + bold
+            "type-warning-override-fg": "fg:#ffff00 bold",  # yellow foreground for non-Normal types + bold
         }
         self.style = Style.from_dict(self.style_definitions)
 
@@ -775,9 +775,9 @@ def main() -> None:
 
         if selected_owner_events_from_selector:
             console.print(
-                f"\n[bold magenta]Detailed Events for[/bold magenta]"
-                f"[bold blue] {selected_owner_events_from_selector[0].involved_object_kind} "
-                f"{selected_owner_events_from_selector[0].involved_object_name}[/bold blue]"
+                f"\n[white]Detailed Events for[/white]"
+                f"[blue] {selected_owner_events_from_selector[0].involved_object_kind} "
+                f"{selected_owner_events_from_selector[0].involved_object_name}[/blue]"
             )
             filtered_selected_events = event_manager_instance.filter_events(
                 selected_owner_events_from_selector,
