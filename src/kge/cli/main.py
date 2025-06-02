@@ -20,6 +20,8 @@ from rich.console import Console  # type: ignore
 from rich.table import Table  # type: ignore
 from rich.text import Text  # type: ignore
 
+from kge import __version__
+
 # Initialize Rich Console
 console = Console()
 
@@ -737,6 +739,9 @@ class KubeEventsInteractiveSelector:
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="View Kubernetes events with an interactive list, grouped by owner."
+    )
+    parser.add_argument(
+        "-v", "--version", action="version", version=f"%(prog)s {__version__}"
     )
     parser.add_argument(
         "-A", "--all", action="store_true", help="Fetch events from all namespaces"
