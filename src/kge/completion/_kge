@@ -1,66 +1,37 @@
+#!/bin/zsh
 #compdef kge
 
 _kge() {
-    local -a pods
     local -a namespaces
     local -a kinds
-    local -a resources
-    namespaces=($(kge --complete-ns))
-    kinds=($(kge --complete-kind))
+    local -a types
 
     _arguments \
-        '(-n --namespace)'{-n,--namespace}'[Specify namespace to use]:namespace:->namespaces' \
-        '(-e --exceptions-only)'{-e,--exceptions-only}'[Show only non-normal events]' \
-        '(-a --all)'{-a,--all}'[Get events for all pods]' \
-        '(-k --kind)'{-k,--kind}'[List all unique kinds from events]:kind:->kinds' \
-        '(-v --version)'{-v,--version}'[Show version information]' \
-        '--show-timestamps[Show absolute timestamps instead of relative times]' \
-        '*:pod:->pods'
+        '(-A --all)'{-A,--all}'[Fetch events from all namespaces]' \
+        '(-n --namespace)'{-n,--namespace}'[Namespace to fetch events from]:namespace:->namespaces' \
+        '(-k --kind)'{-k,--kind}'[Filter events by involved object kind]:kind:->kinds' \
+        '(-t --type)'{-t,--type}'[Filter events by type]:type:->types' \
+        '(--show-timestamps)'--show-timestamps'[Show absolute timestamps]' \
+        '(--completion)'--completion'[Generate shell completion script]:completion:(zsh)'
 
     case $state in
         namespaces)
+            # Get namespaces from kge
+            namespaces=($(kge --complete-ns 2>/dev/null))
             _describe 'namespaces' namespaces
             ;;
         kinds)
-            # Get the namespace from the command line
-            local namespace
-            for ((i=1; i < ${#words}; i++)); do
-                if [[ ${words[i]} == "-n" || ${words[i]} == "--namespace" ]]; then
-                    namespace=${words[i+1]}
-                    break
-                fi
-            done
-            if [[ -n $namespace ]]; then
-                kinds=($(kge --complete-kind -n $namespace))
-            else
-                kinds=($(kge --complete-kind))
-            fi
+            # Get kinds from kge
+            kinds=($(kge --complete-kind 2>/dev/null))
             _describe 'kinds' kinds
             ;;
-        pods)
-            # Get the namespace and kind from the command line
-            local namespace
-            local kind
-            for ((i=1; i < ${#words}; i++)); do
-                if [[ ${words[i]} == "-n" || ${words[i]} == "--namespace" ]]; then
-                    namespace=${words[i+1]}
-                elif [[ ${words[i]} == "-k" || ${words[i]} == "--kind" ]]; then
-                    kind=${words[i+1]}
-                fi
-            done
-            if [[ -n $namespace && -n $kind ]]; then
-                resources=($(kge --complete-resource -n $namespace -k $kind))
-                _describe 'resources' resources
-            elif [[ -n $namespace ]]; then
-                pods=($(kge --complete-pod -n $namespace))
-                _describe 'pods' pods
-            elif [[ -n $kind ]]; then
-                resources=($(kge --complete-resource -k $kind))
-                _describe 'resources' resources
-            else
-                pods=($(kge --complete-pod))
-                _describe 'pods' pods
-            fi
+        types)
+            # Kubernetes event types
+            types=(
+                'Normal'
+                'Warning'
+            )
+            _describe 'types' types
             ;;
     esac
 }

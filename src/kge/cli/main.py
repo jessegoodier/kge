@@ -94,12 +94,12 @@ class KubernetesEventManager:
     """Manages Kubernetes events fetching and processing."""
 
     def __init__(self) -> None:
-        self._object_fetch_cache: Dict[
-            Tuple, Optional[Any]
-        ] = {}  # Cache for fetched K8s objects
-        self._owner_resolution_cache: Dict[
-            Tuple, Dict[str, str]
-        ] = {}  # Cache for resolved owners
+        self._object_fetch_cache: Dict[Tuple, Optional[Any]] = (
+            {}
+        )  # Cache for fetched K8s objects
+        self._owner_resolution_cache: Dict[Tuple, Dict[str, str]] = (
+            {}
+        )  # Cache for resolved owners
         self._init_kubernetes_client()
 
     def _init_kubernetes_client(self) -> None:
@@ -311,9 +311,9 @@ class KubernetesEventManager:
                     current_event_ts
                     > grouped_by_owner_uid[owner_uid_str]["latest_event_timestamp"]
                 ):
-                    grouped_by_owner_uid[owner_uid_str]["latest_event_timestamp"] = (
-                        current_event_ts
-                    )
+                    grouped_by_owner_uid[owner_uid_str][
+                        "latest_event_timestamp"
+                    ] = current_event_ts
                     grouped_by_owner_uid[owner_uid_str]["latest_event_type"] = (
                         event.type or "N/A"
                     )
@@ -372,17 +372,10 @@ class KubernetesEventManager:
     def filter_events(
         self,
         events: List[KubernetesEvent],
-        reason_filter: Optional[str] = None,
         kind_filter: Optional[str] = None,
         type_filter: Optional[str] = None,
     ) -> List[KubernetesEvent]:
         filtered_events = events
-        if reason_filter:
-            filtered_events = [
-                e
-                for e in filtered_events
-                if e.reason and reason_filter.lower() in e.reason.lower()
-            ]
         if kind_filter:
             filtered_events = [
                 e
@@ -399,7 +392,10 @@ class KubernetesEventManager:
         return filtered_events
 
     def display_events_table(
-        self, events: List[KubernetesEvent], show_timestamps: bool = False, show_all_namespaces: bool = False
+        self,
+        events: List[KubernetesEvent],
+        show_timestamps: bool = False,
+        show_all_namespaces: bool = False,
     ) -> None:
         if not events:
             console.print(
@@ -465,17 +461,26 @@ class KubernetesEventManager:
             resource_str = f"{event.involved_object_kind or 'UnknownKind'}/{event.involved_object_name or 'UnknownName'}"
             table.add_row(
                 Text(timestamp_str, style="cyan"),
-                Text(event.type or "N/A", style="red" if event.type and event.type != "Normal" else "white"),
+                Text(
+                    event.type or "N/A",
+                    style="red" if event.type and event.type != "Normal" else "white",
+                ),
                 Text(event.reason or "N/A", style="cyan"),
                 Text(resource_str, style="white"),
-                Text(event.message or "", style="red" if event.type and event.type != "Normal" else "white"),
+                Text(
+                    event.message or "",
+                    style="red" if event.type and event.type != "Normal" else "white",
+                ),
             )
         console.print(table)
 
 
 class KubeEventsInteractiveSelector:
     def __init__(
-        self, grouped_data: Dict[str, Dict[str, Any]], show_timestamps: bool = False, show_all_namespaces: bool = False
+        self,
+        grouped_data: Dict[str, Dict[str, Any]],
+        show_timestamps: bool = False,
+        show_all_namespaces: bool = False,
     ):
         if show_timestamps:
             sort_reverse = False
@@ -617,9 +622,7 @@ class KubeEventsInteractiveSelector:
             )
         else:
             format_str = f"{{:<{max_time_width}}}  {{:<{max_type_width}}}  {{:<{max_reason_width}}}  {{:<{max_resource_width}}}\n"
-            header = format_str.format(
-                "Time", "Type", "Reason", "Owner Resource"
-            )
+            header = format_str.format("Time", "Type", "Reason", "Owner Resource")
 
         lines.append((header_style_str, header))
         lines.append((header_style_str, "-" * total_width + "\n"))
@@ -658,7 +661,10 @@ class KubeEventsInteractiveSelector:
             # Use the dynamic format string
             if self.show_all_namespaces:
                 current_line_parts = [
-                    (other_parts_style_str.strip(), f"{owner_namespace_str:<{max_namespace_width}}  "),
+                    (
+                        other_parts_style_str.strip(),
+                        f"{owner_namespace_str:<{max_namespace_width}}  ",
+                    ),
                     (other_parts_style_str.strip(), f"{time_str:<{max_time_width}}  "),
                     (type_cell_style_str.strip(), f"{type_str:<{max_type_width}}  "),
                     (
@@ -741,17 +747,64 @@ def main() -> None:
         help="Namespace to fetch events from (default: current context namespace)",
     )
     parser.add_argument(
-        "-r", "--reason", help="Filter selected owner's events by reason"
-    )
-    parser.add_argument(
         "-k", "--kind", help="Filter selected owner's events by involved object kind"
     )
     parser.add_argument("-t", "--type", help="Filter selected owner's events by type")
     parser.add_argument(
         "--show-timestamps", action="store_true", help="Show absolute timestamps"
     )
+    parser.add_argument(
+        "--completion",
+        choices=["zsh"],
+        help="Generate shell completion script",
+    )
+    # Hidden completion flags for zsh completion script
+    parser.add_argument("--complete-ns", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--complete-kind", action="store_true", help=argparse.SUPPRESS)
 
     args = parser.parse_args()
+
+    # Handle completion script generation
+    if args.completion:
+        from kge.completion import install_completion
+
+        install_completion()
+        sys.exit(0)
+
+    # Handle completion-specific flags
+    if args.complete_ns:
+        try:
+            kubernetes.config.load_kube_config()
+            v1 = kubernetes.client.CoreV1Api()
+            namespaces = v1.list_namespace()
+            for ns in namespaces.items:
+                print(ns.metadata.name)
+            sys.exit(0)
+        except Exception as e:
+            print(f"Error fetching namespaces: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    if args.complete_kind:
+        # Common Kubernetes resource kinds
+        kinds = [
+            "Pod",
+            "Deployment",
+            "StatefulSet",
+            "DaemonSet",
+            "ReplicaSet",
+            "Job",
+            "CronJob",
+            "Service",
+            "ConfigMap",
+            "Secret",
+            "PersistentVolumeClaim",
+            "PersistentVolume",
+            "Node",
+        ]
+        for kind in kinds:
+            print(kind)
+        sys.exit(0)
+
     event_manager_instance: Optional[KubernetesEventManager] = None
     selected_owner_events_from_selector: Optional[List[KubernetesEvent]] = None
 
@@ -801,7 +854,9 @@ def main() -> None:
             sys.exit(0)
 
         selector = KubeEventsInteractiveSelector(
-            grouped_data=grouped_data, show_timestamps=args.show_timestamps, show_all_namespaces=args.all
+            grouped_data=grouped_data,
+            show_timestamps=args.show_timestamps,
+            show_all_namespaces=args.all,
         )
         selected_owner_events_from_selector = selector.run()
 
@@ -814,7 +869,6 @@ def main() -> None:
             )
             filtered_selected_events = event_manager_instance.filter_events(
                 selected_owner_events_from_selector,
-                reason_filter=args.reason,
                 kind_filter=args.kind,
                 type_filter=args.type,
             )

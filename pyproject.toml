@@ -80,5 +80,6 @@ dev = [
     "pytest>=8.0.0,<9.0.0",
     "black",
     "isort",
-    "mypy"
+    "mypy",
+    "build"
 ]
