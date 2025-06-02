@@ -46,7 +46,6 @@ def find_pypi_version(github_version):
 
 def check_version_match(version):
     try:
-
         # Check pyproject.toml
         with open("pyproject.toml", "r") as f:
             pyproject_content = f.read()

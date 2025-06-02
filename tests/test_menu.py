@@ -1,6 +1,7 @@
 from kge.cli.main import KubeEventsInteractiveSelector
 from datetime import datetime, timezone
 
+
 def test_initial_menu_load():
     # Create a mock grouped data with no events
     mock_grouped_data = {}
@@ -18,6 +19,7 @@ def test_initial_menu_load():
     content_str = str(content)
     assert "No event groups to display" in content_str
 
+
 def test_initial_menu_with_events():
     # Create mock grouped data with one event
     mock_grouped_data = {
@@ -34,18 +36,18 @@ def test_initial_menu_with_events():
                     "api_version": "v1",
                     "type": "Normal",
                     "count": 1,
-                    "involved_object_uid": "test-uid"
+                    "involved_object_uid": "test-uid",
                 }
             ],
             "owner_info": {
                 "kind": "Pod",
                 "name": "test-pod",
                 "namespace": "default",
-                "uid": "test-uid"
+                "uid": "test-uid",
             },
             "latest_event_timestamp": datetime.now(timezone.utc),
             "latest_event_type": "Normal",
-            "latest_event_reason": "TestReason"
+            "latest_event_reason": "TestReason",
         }
     }
 

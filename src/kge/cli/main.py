@@ -1,3 +1,4 @@
+#! /usr/bin/env python3
 import argparse
 import asyncio
 import sys
@@ -371,17 +372,10 @@ class KubernetesEventManager:
     def filter_events(
         self,
         events: List[KubernetesEvent],
-        reason_filter: Optional[str] = None,
         kind_filter: Optional[str] = None,
         type_filter: Optional[str] = None,
     ) -> List[KubernetesEvent]:
         filtered_events = events
-        if reason_filter:
-            filtered_events = [
-                e
-                for e in filtered_events
-                if e.reason and reason_filter.lower() in e.reason.lower()
-            ]
         if kind_filter:
             filtered_events = [
                 e
@@ -398,7 +392,10 @@ class KubernetesEventManager:
         return filtered_events
 
     def display_events_table(
-        self, events: List[KubernetesEvent], show_timestamps: bool = False
+        self,
+        events: List[KubernetesEvent],
+        show_timestamps: bool = False,
+        show_all_namespaces: bool = False,
     ) -> None:
         if not events:
             console.print(
@@ -407,7 +404,7 @@ class KubernetesEventManager:
             return
         table = Table(
             show_header=True,
-            header_style="bold magenta",
+            header_style="bold white",
             box=rich.box.ROUNDED,
             show_lines=True,
             padding=(0, 1),
@@ -417,7 +414,7 @@ class KubernetesEventManager:
         table.add_column("Time", no_wrap=True)
         table.add_column("Type", no_wrap=True)
         table.add_column("Reason", no_wrap=True)
-        table.add_column("Resource (Involved)", no_wrap=True)
+        table.add_column("Type/Involved Object", no_wrap=True)
         table.add_column("Message")
 
         now = datetime.now(timezone.utc)
@@ -461,24 +458,44 @@ class KubernetesEventManager:
                     timestamp_str = f"{delta.seconds // 60}m ago"
                 else:
                     timestamp_str = f"{delta.seconds}s ago"
-            resource_str = f"{event.namespace or 'cluster'}/{event.involved_object_kind or 'UnknownKind'}/{event.involved_object_name or 'UnknownName'}"
+            resource_str = f"{event.involved_object_kind or 'UnknownKind'}/{event.involved_object_name or 'UnknownName'}"
             table.add_row(
                 Text(timestamp_str, style="cyan"),
-                Text(event.type or "N/A", style="yellow"),
-                Text(event.reason or "N/A", style="red"),
-                Text(resource_str, style="blue"),
-                Text(event.message or "", style="white"),
+                Text(
+                    event.type or "N/A",
+                    style="red" if event.type and event.type != "Normal" else "white",
+                ),
+                Text(event.reason or "N/A", style="cyan"),
+                Text(resource_str, style="white"),
+                Text(
+                    event.message or "",
+                    style="red" if event.type and event.type != "Normal" else "white",
+                ),
             )
         console.print(table)
 
 
 class KubeEventsInteractiveSelector:
-    def __init__(self, grouped_data: Dict[str, Dict[str, Any]]):
+    def __init__(
+        self,
+        grouped_data: Dict[str, Dict[str, Any]],
+        show_timestamps: bool = False,
+        show_all_namespaces: bool = False,
+    ):
+        if show_timestamps:
+            sort_reverse = False
+        else:
+            sort_reverse = True
         self.grouped_data = grouped_data
+        self.show_timestamps = show_timestamps
+        self.show_all_namespaces = show_all_namespaces
         self.sorted_owner_uids = sorted(
             self.grouped_data.keys(),
-            key=lambda uid: self.grouped_data[uid]["latest_event_timestamp"],
-            reverse=True,
+            key=lambda uid: (
+                self.grouped_data[uid]["latest_event_timestamp"]
+                or datetime.min.replace(tzinfo=timezone.utc)
+            ),
+            reverse=sort_reverse,
         )
         self.selected_index = 0
         self.result_events: Optional[List[KubernetesEvent]] = None
@@ -488,10 +505,11 @@ class KubeEventsInteractiveSelector:
 
         # Define styles as actual prompt_toolkit style strings
         self.style_definitions = {
-            "selected-row": "bg:#ansiblue #ansiyellow",
+            "selected-row": "bg:#ansiblue #ansiyellow",  # Original: blue bg, yellow text
             "header": "bold #ansimagenta",
             "normal-row": "",  # Default style (no special formatting)
             "info": "bold #ansicyan",
+            "type-warning-override-fg": "fg:#ffff00 bold",  # yellow foreground for non-Normal types + bold
         }
         self.style = Style.from_dict(self.style_definitions)
 
@@ -503,6 +521,8 @@ class KubeEventsInteractiveSelector:
             if timestamp.tzinfo is None
             else timestamp
         )
+        if self.show_timestamps:
+            return str(ts_aware)
         now = datetime.now(timezone.utc)
         delta = now - ts_aware
         if delta.total_seconds() < 0:
@@ -519,7 +539,6 @@ class KubeEventsInteractiveSelector:
 
     def _get_list_content(self) -> FormattedText:
         lines = []
-        # Use the actual style string from style_definitions
         lines.append(
             (
                 self.style_definitions["header"],
@@ -533,18 +552,80 @@ class KubeEventsInteractiveSelector:
             )
             return to_formatted_text(lines)
 
-        # Header for the list (similar to Rich Table header)
-        lines.append(
-            (
-                self.style_definitions["info"],  # Use the actual style string
-                "{:<15} {:<10} {:<15} {:<50} {:<20}\n".format(
-                    "Time", "Type", "Reason", "Owner Resource", "Namespace"
-                ),
+        # Calculate maximum widths for each column
+        max_time_width = 27 if self.show_timestamps else 15  # Wider for timestamps
+        max_type_width = 10  # Fixed width for type
+        max_reason_width = 15  # Initial width for reason
+        max_resource_width = 60  # Initial width for resource
+        max_namespace_width = 20  # Initial width for namespace
+
+        # Calculate actual maximum widths from data
+        for owner_uid in self.sorted_owner_uids:
+            data = self.grouped_data[owner_uid]
+            owner_info = data["owner_info"]
+            resource_name_str = (
+                f"{owner_info.get('kind', 'N/A')}/{owner_info.get('name', 'N/A')}"
             )
-        )
-        lines.append(
-            (self.style_definitions["info"], "-" * 105 + "\n")
-        )  # Separator, using 'info' style
+            owner_namespace_str = owner_info.get("namespace", "cluster") or "cluster"
+            reason_str = data["latest_event_reason"]
+
+            max_resource_width = max(max_resource_width, len(resource_name_str))
+            max_namespace_width = max(max_namespace_width, len(owner_namespace_str))
+            max_reason_width = max(max_reason_width, len(reason_str))
+
+        # Calculate total width
+        if self.show_all_namespaces:
+            total_width = (
+                max_namespace_width
+                + max_time_width
+                + max_type_width
+                + max_reason_width
+                + max_resource_width
+                + 10
+            )
+        else:
+            total_width = (
+                max_time_width
+                + max_type_width
+                + max_reason_width
+                + max_resource_width
+                + 6
+            )
+
+        # If total width exceeds 140, truncate reason column to 30 characters
+        if total_width > 140:
+            max_reason_width = 30
+            if self.show_all_namespaces:
+                total_width = (
+                    max_namespace_width
+                    + max_time_width
+                    + max_type_width
+                    + max_reason_width
+                    + max_resource_width
+                    + 10
+                )
+            else:
+                total_width = (
+                    max_time_width
+                    + max_type_width
+                    + max_reason_width
+                    + max_resource_width
+                    + 6
+                )
+
+        header_style_str = self.style_definitions["info"]
+        # Create format string with dynamic widths
+        if self.show_all_namespaces:
+            format_str = f"{{:<{max_namespace_width}}}  {{:<{max_time_width}}}  {{:<{max_type_width}}}  {{:<{max_reason_width}}}  {{:<{max_resource_width}}}\n"
+            header = format_str.format(
+                "Namespace", "Time", "Type", "Reason", "Owner Resource"
+            )
+        else:
+            format_str = f"{{:<{max_time_width}}}  {{:<{max_type_width}}}  {{:<{max_reason_width}}}  {{:<{max_resource_width}}}\n"
+            header = format_str.format("Time", "Type", "Reason", "Owner Resource")
+
+        lines.append((header_style_str, header))
+        lines.append((header_style_str, "-" * total_width + "\n"))
 
         for i, owner_uid in enumerate(self.sorted_owner_uids):
             data = self.grouped_data[owner_uid]
@@ -552,27 +633,55 @@ class KubeEventsInteractiveSelector:
             resource_name_str = (
                 f"{owner_info.get('kind', 'N/A')}/{owner_info.get('name', 'N/A')}"
             )
-            # Ensure owner_namespace_str is always a string.
-            owner_namespace_str = owner_info.get("namespace")
-            if owner_namespace_str is None:
-                owner_namespace_str = "cluster"
+            owner_namespace_str = owner_info.get("namespace", "cluster") or "cluster"
 
             time_str = self._format_relative_time(data["latest_event_timestamp"])
             type_str = data["latest_event_type"]
             reason_str = data["latest_event_reason"]
 
-            # Construct the single line string first
-            line_content = "{:<15} {:<10} {:<15} {:<50} {:<20}".format(
-                time_str, type_str, reason_str, resource_name_str, owner_namespace_str
-            )
+            # Truncate reason if needed
+            if len(reason_str) > max_reason_width:
+                reason_str = reason_str[: max_reason_width - 3] + "..."
 
-            # Get the actual style string based on selection
-            current_row_style = (
+            is_selected = i == self.selected_index
+
+            other_parts_style_str = (
                 self.style_definitions["selected-row"]
-                if i == self.selected_index
+                if is_selected
                 else self.style_definitions["normal-row"]
             )
-            lines.append((current_row_style, line_content + "\n"))
+            type_cell_style_str = other_parts_style_str
+            if type_str != "Normal":
+                type_cell_style_str = (
+                    type_cell_style_str
+                    + " "
+                    + self.style_definitions["type-warning-override-fg"]
+                ).strip()
+
+            # Use the dynamic format string
+            if self.show_all_namespaces:
+                current_line_parts = [
+                    (
+                        other_parts_style_str.strip(),
+                        f"{owner_namespace_str:<{max_namespace_width}}  ",
+                    ),
+                    (other_parts_style_str.strip(), f"{time_str:<{max_time_width}}  "),
+                    (type_cell_style_str.strip(), f"{type_str:<{max_type_width}}  "),
+                    (
+                        other_parts_style_str.strip(),
+                        f"{reason_str:<{max_reason_width}}  {resource_name_str:<{max_resource_width}}\n",
+                    ),
+                ]
+            else:
+                current_line_parts = [
+                    (other_parts_style_str.strip(), f"{time_str:<{max_time_width}}  "),
+                    (type_cell_style_str.strip(), f"{type_str:<{max_type_width}}  "),
+                    (
+                        other_parts_style_str.strip(),
+                        f"{reason_str:<{max_reason_width}}  {resource_name_str:<{max_resource_width}}\n",
+                    ),
+                ]
+            lines.extend(current_line_parts)
 
         return to_formatted_text(lines)
 
@@ -592,15 +701,15 @@ class KubeEventsInteractiveSelector:
             if self.sorted_owner_uids:
                 selected_uid = self.sorted_owner_uids[self.selected_index]
                 self.result_events = self.grouped_data[selected_uid]["events"]
-                event.app.exit(self.result_events)  # <-- Fix: pass result
+                event.app.exit(self.result_events)
             else:
                 event.app.exit(None)
 
         @self.key_bindings.add("c-c", eager=True)  # type: ignore[misc]
         @self.key_bindings.add("q", eager=True)  # type: ignore[misc]
         def _(event: Any) -> None:
-            self.result_events = None  # Indicate no selection / user quit
-            event.app.exit(None)  # <-- Fix: pass None
+            self.result_events = None
+            event.app.exit(None)
 
     def run(self) -> Optional[List[KubernetesEvent]]:
         root_container = HSplit(
@@ -620,7 +729,6 @@ class KubeEventsInteractiveSelector:
             style=self.style,
         )
 
-        # Run the prompt_toolkit application
         self.result_events = application.run()
 
         return self.result_events
@@ -639,41 +747,98 @@ def main() -> None:
         help="Namespace to fetch events from (default: current context namespace)",
     )
     parser.add_argument(
-        "-r", "--reason", help="Filter selected owner's events by reason"
-    )
-    parser.add_argument(
         "-k", "--kind", help="Filter selected owner's events by involved object kind"
     )
     parser.add_argument("-t", "--type", help="Filter selected owner's events by type")
     parser.add_argument(
         "--show-timestamps", action="store_true", help="Show absolute timestamps"
     )
+    parser.add_argument(
+        "--completion",
+        choices=["zsh"],
+        help="Generate shell completion script",
+    )
+    # Hidden completion flags for zsh completion script
+    parser.add_argument("--complete-ns", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--complete-kind", action="store_true", help=argparse.SUPPRESS)
 
     args = parser.parse_args()
+
+    # Handle completion script generation
+    if args.completion:
+        from kge.completion import install_completion
+
+        install_completion()
+        sys.exit(0)
+
+    # Handle completion-specific flags
+    if args.complete_ns:
+        try:
+            kubernetes.config.load_kube_config()
+            v1 = kubernetes.client.CoreV1Api()
+            namespaces = v1.list_namespace()
+            for ns in namespaces.items:
+                print(ns.metadata.name)
+            sys.exit(0)
+        except Exception as e:
+            print(f"Error fetching namespaces: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    if args.complete_kind:
+        # Common Kubernetes resource kinds
+        kinds = [
+            "Pod",
+            "Deployment",
+            "StatefulSet",
+            "DaemonSet",
+            "ReplicaSet",
+            "Job",
+            "CronJob",
+            "Service",
+            "ConfigMap",
+            "Secret",
+            "PersistentVolumeClaim",
+            "PersistentVolume",
+            "Node",
+        ]
+        for kind in kinds:
+            print(kind)
+        sys.exit(0)
+
     event_manager_instance: Optional[KubernetesEventManager] = None
     selected_owner_events_from_selector: Optional[List[KubernetesEvent]] = None
 
     try:
         event_manager_instance = KubernetesEventManager()
 
-        # Determine namespace logic
         if args.all:
-            namespace_arg = None  # None means all namespaces
-
+            namespace_arg = None
         elif args.namespace is not None:
-            namespace_arg = args.namespace  # Could be None, which means current context
+            namespace_arg = args.namespace
         else:
-            contexts = kubernetes.config.list_kube_config_contexts()
-            current_context = contexts[1]  # Get the current context from the tuple
-            namespace_arg = current_context.get("context", {}).get("namespace")
+            try:
+                _, current_context_dict = kubernetes.config.list_kube_config_contexts()
+                namespace_arg = current_context_dict.get("context", {}).get("namespace")
+                if not namespace_arg:
+                    console.print(
+                        "[yellow]Current context does not have a namespace specified. Consider using -n <namespace> or --all.[/yellow]"
+                    )
+                    # Defaulting to None will make fetch_events get all namespaces.
+                    namespace_arg = None
+            except Exception as e:
+                console.print(
+                    f"[yellow]Could not determine current namespace: {e}. Defaulting to all namespaces.[/yellow]"
+                )
+                namespace_arg = None
 
         console.print("[cyan]Loading events from Kubernetes...[/cyan]")
         all_events: Optional[List[KubernetesEvent]] = asyncio.run(
             asyncio.to_thread(event_manager_instance.fetch_events, namespace_arg)
         )
         if not all_events:
+            ns_display = namespace_arg or "all"
             console.print(
-                f"[yellow]No recent events found in the {namespace_arg} namespace.[/yellow]"
+                f"[yellow]No recent events found in the {ns_display} namespace(s).[/yellow]"
             )
             sys.exit(0)
 
@@ -688,22 +853,27 @@ def main() -> None:
             )
             sys.exit(0)
 
-        # Run the prompt_toolkit interactive selector
-        selector = KubeEventsInteractiveSelector(grouped_data=grouped_data)
+        selector = KubeEventsInteractiveSelector(
+            grouped_data=grouped_data,
+            show_timestamps=args.show_timestamps,
+            show_all_namespaces=args.all,
+        )
         selected_owner_events_from_selector = selector.run()
 
         if selected_owner_events_from_selector:
             console.print(
-                "\n[bold magenta]--- Detailed Events for Selected Owner ---[/bold magenta]"
+                f"\n[white]Detailed Events for[/white]"
+                f"[cyan] {selected_owner_events_from_selector[0].involved_object_kind or 'UnknownKind'} "
+                f"{selected_owner_events_from_selector[0].involved_object_name}[/cyan]"
+                f"[white] in namespace:[/white] [cyan]{selected_owner_events_from_selector[0].namespace or 'cluster'}[/cyan]"
             )
             filtered_selected_events = event_manager_instance.filter_events(
                 selected_owner_events_from_selector,
-                reason_filter=args.reason,
                 kind_filter=args.kind,
                 type_filter=args.type,
             )
             event_manager_instance.display_events_table(
-                filtered_selected_events, args.show_timestamps
+                filtered_selected_events, args.show_timestamps, args.all
             )
         else:
             console.print(
