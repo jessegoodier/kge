@@ -1,0 +1,39 @@
+#!/bin/zsh
+#compdef kge
+
+_kge() {
+    local -a namespaces
+    local -a kinds
+    local -a types
+
+    _arguments \
+        '(-A --all)'{-A,--all}'[Fetch events from all namespaces]' \
+        '(-n --namespace)'{-n,--namespace}'[Namespace to fetch events from]:namespace:->namespaces' \
+        '(-k --kind)'{-k,--kind}'[Filter events by involved object kind]:kind:->kinds' \
+        '(-t --type)'{-t,--type}'[Filter events by type]:type:->types' \
+        '(--show-timestamps)'--show-timestamps'[Show absolute timestamps]' \
+        '(--completion)'--completion'[Generate shell completion script]:completion:(zsh)'
+
+    case $state in
+        namespaces)
+            # Get namespaces from kge
+            namespaces=($(kge --complete-ns 2>/dev/null))
+            _describe 'namespaces' namespaces
+            ;;
+        kinds)
+            # Get kinds from kge
+            kinds=($(kge --complete-kind 2>/dev/null))
+            _describe 'kinds' kinds
+            ;;
+        types)
+            # Kubernetes event types
+            types=(
+                'Normal'
+                'Warning'
+            )
+            _describe 'types' types
+            ;;
+    esac
+}
+
+compdef _kge kge

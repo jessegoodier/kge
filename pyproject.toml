@@ -1,0 +1,85 @@
+[project]
+name = "kge-kubectl-get-events"
+version = "0.11.0"
+description = "Kubernetes utility for viewing pod and failed replicaset events"
+authors = [ {name = "Jesse Goodier", email = "31039225+jessegoodier@users.noreply.github.com"} ]
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.11,<4.0"
+dependencies = [
+    "rich>=13.7.0,<14.0.0",
+    "kubernetes>=32.0.1,<33.0.0",
+    "prompt_toolkit"
+]
+keywords = ["kubernetes", "troubleshooting", "kubectl", "events", "pod", "replicaset", "failed", "event"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Systems Administration",
+    "Topic :: Utilities"
+]
+
+[project.urls]
+Homepage = "https://github.com/jessegoodier/kge"
+Repository = "https://github.com/jessegoodier/kge"
+Documentation = "https://github.com/jessegoodier/kge/blob/main/README.md"
+"Bug Tracker" = "https://github.com/jessegoodier/kge/issues"
+
+[project.scripts]
+kge = "kge.cli.main:main"
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel", "tomli>=2.0.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["kge*"]
+exclude = ["tests*", "tests.*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+python_classes = ["Test*"]
+
+[tool.flake8]
+max-line-length = 110
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+ensure_newline_before_comments = true
+line_length = 110
+
+[tool.mypy]
+python_version = "0.11.0"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0,<9.0.0",
+    "black",
+    "isort",
+    "mypy",
+    "build"
+]
