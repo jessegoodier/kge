@@ -75,6 +75,11 @@ warn_unused_ignores = true
 warn_no_return = true
 warn_unreachable = true
 
+[dependency-groups]
+dev = [
+    "ruff>=0.12.5",
+]
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0.0,<9.0.0",

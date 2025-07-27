@@ -1,10 +1,10 @@
 """Tests for completion functionality."""
 
-import os
-import shutil
 from pathlib import Path
+
 import pytest
-from kge.completion import install_completion, get_completion_path
+
+from kge.completion import get_completion_path, install_completion
 
 
 @pytest.fixture

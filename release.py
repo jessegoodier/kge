@@ -1,7 +1,8 @@
 #! /usr/bin/env python3
+import argparse
 import re
 import subprocess
-import argparse
+
 import requests
 
 

@@ -96,12 +96,12 @@ class KubernetesEventManager:
     """Manages Kubernetes events fetching and processing."""
 
     def __init__(self) -> None:
-        self._object_fetch_cache: Dict[Tuple, Optional[Any]] = (
-            {}
-        )  # Cache for fetched K8s objects
-        self._owner_resolution_cache: Dict[Tuple, Dict[str, str]] = (
-            {}
-        )  # Cache for resolved owners
+        self._object_fetch_cache: Dict[
+            Tuple, Optional[Any]
+        ] = {}  # Cache for fetched K8s objects
+        self._owner_resolution_cache: Dict[
+            Tuple, Dict[str, str]
+        ] = {}  # Cache for resolved owners
         self._init_kubernetes_client()
 
     def _init_kubernetes_client(self) -> None:
@@ -118,19 +118,78 @@ class KubernetesEventManager:
             except kubernetes.config.ConfigException:
                 console.print("[red]Could not configure Kubernetes client.[/red]")
                 console.print(
-                    "[yellow]Please ensure you have a valid kubeconfig file or are running in-cluster.[/yellow]"
+                    "[yellow]No Kubernetes configuration found. Please ensure one of the following:[/yellow]"
                 )
                 console.print(
-                    "[yellow]You can set KUBECONFIG environment variable to specify a custom kubeconfig path.[/yellow]"
+                    "[yellow]  - You have a valid kubeconfig file at ~/.kube/config[/yellow]"
+                )
+                console.print(
+                    "[yellow]  - You have set the KUBECONFIG environment variable to point to a valid config file[/yellow]"
+                )
+                console.print(
+                    "[yellow]  - You are running inside a Kubernetes cluster (in-cluster config)[/yellow]"
+                )
+                console.print(
+                    "[yellow]  - You have a valid kubeconfig file in the current directory[/yellow]"
+                )
+                console.print("[yellow][/yellow]")
+                console.print("[yellow]Common solutions:[/yellow]")
+                console.print(
+                    "[yellow]  - Run 'kubectl config view' to check if kubectl is configured[/yellow]"
+                )
+                console.print(
+                    "[yellow]  - Set KUBECONFIG environment variable: export KUBECONFIG=/path/to/your/config[/yellow]"
+                )
+                console.print(
+                    "[yellow]  - Copy your kubeconfig to ~/.kube/config[/yellow]"
+                )
+                console.print(
+                    "[yellow]  - Use 'kubectl config set-cluster' and 'kubectl config set-context' to configure access[/yellow]"
                 )
                 raise Exception(
                     "Could not configure Kubernetes client. "
-                    "Ensure you have a valid kubeconfig or are running in-cluster."
+                    "No valid kubeconfig found and not running in-cluster. "
+                    "Please check your Kubernetes configuration."
                 )
 
-        self.v1 = kubernetes.client.CoreV1Api()
-        self.apps_v1 = kubernetes.client.AppsV1Api()
-        self.batch_v1 = kubernetes.client.BatchV1Api()
+        try:
+            self.v1 = kubernetes.client.CoreV1Api()
+            self.apps_v1 = kubernetes.client.AppsV1Api()
+            self.batch_v1 = kubernetes.client.BatchV1Api()
+        except Exception as e:
+            # Handle network connectivity errors during client initialization
+            error_str = str(e).lower()
+            if "maxretryerror" in error_str or "nameresolutionerror" in error_str:
+                console.print(
+                    "[red]Network connectivity error: Unable to reach Kubernetes cluster[/red]"
+                )
+                console.print(f"[yellow]Error details: {e}[/yellow]")
+                console.print(
+                    "[yellow]Please check your network connection and ensure the Kubernetes cluster is accessible.[/yellow]"
+                )
+                console.print("[yellow]You may need to:[/yellow]")
+                console.print(
+                    "[yellow]  - Check your VPN connection if using one[/yellow]"
+                )
+                console.print(
+                    "[yellow]  - Verify your kubeconfig is pointing to the correct cluster[/yellow]"
+                )
+                console.print(
+                    "[yellow]  - Ensure the cluster endpoint is reachable from your network[/yellow]"
+                )
+                console.print(
+                    "[yellow]  - Check if the cluster is running and accessible[/yellow]"
+                )
+                console.print(
+                    "[yellow]  - Try 'kubectl cluster-info' to test connectivity[/yellow]"
+                )
+                raise Exception(
+                    f"Network connectivity error: Unable to reach Kubernetes cluster. "
+                    f"Please check your network connection and cluster accessibility. "
+                    f"Original error: {e}"
+                )
+            else:
+                raise e
 
     def _fetch_k8s_object(
         self, namespace: str, kind: str, name: str, api_version: Optional[str]
@@ -172,9 +231,16 @@ class KubernetesEventManager:
             if e.status != 404:  # Log other errors, 404 is common if object deleted
                 # console.print(f"[yellow]API Error fetching {kind}/{name} in {namespace}: {e.status} - {e.reason}[/yellow]")
                 pass
-        except Exception:
-            # console.print(f"[red]Unexpected error fetching {kind}/{name}: {e}[/red]")
-            pass
+        except Exception as e:
+            # Handle network connectivity errors silently for individual object fetches
+            # These are expected to fail gracefully and not break the entire flow
+            error_str = str(e).lower()
+            if "maxretryerror" in error_str or "nameresolutionerror" in error_str:
+                # Silently handle network errors for individual object fetches
+                pass
+            else:
+                # console.print(f"[red]Unexpected error fetching {kind}/{name}: {e}[/red]")
+                pass
         self._object_fetch_cache[cache_key] = obj
         return obj
 
@@ -313,9 +379,9 @@ class KubernetesEventManager:
                     current_event_ts
                     > grouped_by_owner_uid[owner_uid_str]["latest_event_timestamp"]
                 ):
-                    grouped_by_owner_uid[owner_uid_str][
-                        "latest_event_timestamp"
-                    ] = current_event_ts
+                    grouped_by_owner_uid[owner_uid_str]["latest_event_timestamp"] = (
+                        current_event_ts
+                    )
                     grouped_by_owner_uid[owner_uid_str]["latest_event_type"] = (
                         event.type or "N/A"
                     )
@@ -367,10 +433,31 @@ class KubernetesEventManager:
                 console.print(f"[red]API Error Body: {e.body}[/red]")
             return []
         except Exception as e:
-            console.print(f"[red]Unexpected error fetching events: {e}[/red]")
-            import traceback
+            # Handle specific network connectivity errors
+            error_str = str(e).lower()
+            if "maxretryerror" in error_str or "nameresolutionerror" in error_str:
+                console.print(
+                    "[red]Network connectivity error: Unable to reach Kubernetes cluster[/red]"
+                )
+                console.print(f"[yellow]Error details: {e}[/yellow]")
+                console.print(
+                    "[yellow]Please check your network connection and ensure the Kubernetes cluster is accessible.[/yellow]"
+                )
+                console.print("[yellow]You may need to:[/yellow]")
+                console.print(
+                    "[yellow]  - Check your VPN connection if using one[/yellow]"
+                )
+                console.print(
+                    "[yellow]  - Verify your kubeconfig is pointing to the correct cluster[/yellow]"
+                )
+                console.print(
+                    "[yellow]  - Ensure the cluster endpoint is reachable from your network[/yellow]"
+                )
+            else:
+                console.print(f"[red]Unexpected error fetching events: {e}[/red]")
+                import traceback
 
-            console.print(traceback.format_exc())
+                console.print(traceback.format_exc())
             return []
 
     def filter_events(
@@ -925,13 +1012,22 @@ def main() -> None:
         )
         sys.exit(0)
     except Exception as e:
-        console.print(
-            f"\n[bold red]An unexpected error occurred in main execution: {e}[/bold red]"
-        )
-        import traceback
+        error_str = str(e).lower()
+        if "could not configure kubernetes client" in error_str:
+            # This is already handled in _init_kubernetes_client with detailed messages
+            # Just exit gracefully without additional error output
+            sys.exit(1)
+        elif "network connectivity error" in error_str:
+            # Network errors are already handled with detailed messages
+            sys.exit(1)
+        else:
+            console.print(
+                f"\n[bold red]An unexpected error occurred in main execution: {e}[/bold red]"
+            )
+            import traceback
 
-        console.print(traceback.format_exc())
-        sys.exit(1)
+            console.print(traceback.format_exc())
+            sys.exit(1)
 
 
 if __name__ == "__main__":

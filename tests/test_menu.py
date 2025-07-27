@@ -1,5 +1,6 @@
-from kge.cli.main import KubeEventsInteractiveSelector
 from datetime import datetime, timezone
+
+from kge.cli.main import KubeEventsInteractiveSelector
 
 
 def test_initial_menu_load():
