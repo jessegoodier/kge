@@ -506,7 +506,20 @@ class KubeEventsInteractiveSelector:
             ),
             reverse=sort_reverse,
         )
-        self.selected_index = 0
+
+        # Default to the most recent event group
+        # When sort_direction is "desc", most recent is at index 0
+        # When sort_direction is "asc", most recent is at the end of the list
+        if self.sorted_owner_uids:
+            if sort_direction == "desc":
+                self.selected_index = 0  # Most recent is first
+            else:
+                self.selected_index = (
+                    len(self.sorted_owner_uids) - 1
+                )  # Most recent is last
+        else:
+            self.selected_index = 0
+
         self.result_events: Optional[List[KubernetesEvent]] = None
 
         self.key_bindings = KeyBindings()
