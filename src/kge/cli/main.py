@@ -219,7 +219,7 @@ class KubernetesEventManager:
             return resolved_owner
 
     def group_events_by_owner(
-        self, events: List[KubernetesEvent]
+        self, events: List[KubernetesEvent], sort_direction: str = "asc"
     ) -> Dict[str, Dict[str, Any]]:
         grouped_by_owner_uid: Dict[str, Dict[str, Any]] = {}
         involved_to_final_owner_cache: Dict[Tuple, Dict[str, str]] = {}
@@ -324,6 +324,8 @@ class KubernetesEventManager:
                     )
 
         for owner_data in grouped_by_owner_uid.values():
+            # Sort events based on sort_direction
+            reverse_sort = sort_direction == "desc"
             owner_data["events"].sort(
                 key=lambda e: (
                     (e.last_timestamp or e.first_timestamp or datetime.min).replace(
@@ -333,7 +335,7 @@ class KubernetesEventManager:
                     is None
                     else (e.last_timestamp or e.first_timestamp or datetime.min)
                 ),
-                reverse=True,
+                reverse=reverse_sort,
             )
         return grouped_by_owner_uid
 
@@ -398,6 +400,7 @@ class KubernetesEventManager:
         events: List[KubernetesEvent],
         show_timestamps: bool = False,
         show_all_namespaces: bool = False,
+        sort_direction: str = "asc",
     ) -> None:
         if not events:
             console.print(
@@ -429,12 +432,14 @@ class KubernetesEventManager:
                 return dt.replace(tzinfo=timezone.utc)
             return dt
 
+        # Sort events based on sort_direction
+        reverse_sort = sort_direction == "desc"
         sorted_events = sorted(
             events,
             key=lambda event: ensure_aware(
                 event.last_timestamp or event.first_timestamp
             ),
-            reverse=True,
+            reverse=reverse_sort,
         )
 
         for event in sorted_events:
@@ -483,14 +488,16 @@ class KubeEventsInteractiveSelector:
         grouped_data: Dict[str, Dict[str, Any]],
         show_timestamps: bool = False,
         show_all_namespaces: bool = False,
+        sort_direction: str = "asc",
     ):
-        if show_timestamps:
-            sort_reverse = False
-        else:
-            sort_reverse = True
+        # Use sort_direction to determine reverse sorting
+        # asc = oldest first (reverse=False), desc = newest first (reverse=True)
+        sort_reverse = sort_direction == "desc"
+
         self.grouped_data = grouped_data
         self.show_timestamps = show_timestamps
         self.show_all_namespaces = show_all_namespaces
+        self.sort_direction = sort_direction
         self.sorted_owner_uids = sorted(
             self.grouped_data.keys(),
             key=lambda uid: (
@@ -759,6 +766,12 @@ def main() -> None:
         "--show-timestamps", action="store_true", help="Show absolute timestamps"
     )
     parser.add_argument(
+        "--sort-direction",
+        choices=["asc", "desc"],
+        default="asc",
+        help="Sort events by timestamp direction: asc (oldest first) or desc (newest first) (default: asc)",
+    )
+    parser.add_argument(
         "--completion",
         choices=["zsh"],
         help="Generate shell completion script",
@@ -849,7 +862,11 @@ def main() -> None:
 
         console.print("[cyan]Grouping events by owner...[/cyan]")
         grouped_data = asyncio.run(
-            asyncio.to_thread(event_manager_instance.group_events_by_owner, all_events)
+            asyncio.to_thread(
+                event_manager_instance.group_events_by_owner,
+                all_events,
+                args.sort_direction,
+            )
         )
 
         if not grouped_data:
@@ -862,6 +879,7 @@ def main() -> None:
             grouped_data=grouped_data,
             show_timestamps=args.show_timestamps,
             show_all_namespaces=args.all,
+            sort_direction=args.sort_direction,
         )
         selected_owner_events_from_selector = selector.run()
 
@@ -878,7 +896,10 @@ def main() -> None:
                 type_filter=args.type,
             )
             event_manager_instance.display_events_table(
-                filtered_selected_events, args.show_timestamps, args.all
+                filtered_selected_events,
+                args.show_timestamps,
+                args.all,
+                args.sort_direction,
             )
         else:
             console.print(
