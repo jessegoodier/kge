@@ -96,12 +96,12 @@ class KubernetesEventManager:
     """Manages Kubernetes events fetching and processing."""
 
     def __init__(self) -> None:
-        self._object_fetch_cache: Dict[
-            Tuple, Optional[Any]
-        ] = {}  # Cache for fetched K8s objects
-        self._owner_resolution_cache: Dict[
-            Tuple, Dict[str, str]
-        ] = {}  # Cache for resolved owners
+        self._object_fetch_cache: Dict[Tuple, Optional[Any]] = (
+            {}
+        )  # Cache for fetched K8s objects
+        self._owner_resolution_cache: Dict[Tuple, Dict[str, str]] = (
+            {}
+        )  # Cache for resolved owners
         self._init_kubernetes_client()
 
     def _init_kubernetes_client(self) -> None:
@@ -379,9 +379,9 @@ class KubernetesEventManager:
                     current_event_ts
                     > grouped_by_owner_uid[owner_uid_str]["latest_event_timestamp"]
                 ):
-                    grouped_by_owner_uid[owner_uid_str]["latest_event_timestamp"] = (
-                        current_event_ts
-                    )
+                    grouped_by_owner_uid[owner_uid_str][
+                        "latest_event_timestamp"
+                    ] = current_event_ts
                     grouped_by_owner_uid[owner_uid_str]["latest_event_type"] = (
                         event.type or "N/A"
                     )
