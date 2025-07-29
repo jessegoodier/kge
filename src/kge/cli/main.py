@@ -410,14 +410,14 @@ class KubernetesEventManager:
         self._owner_resolution_cache.clear()
         try:
             if namespace:
-                console.print(
-                    f"[cyan]Fetching events for namespace: {namespace}[/cyan]"
-                )
+                # console.print(
+                #     f"[cyan]Fetching events for namespace: {namespace}[/cyan]"
+                # )
                 events_list_response = self.v1.list_namespaced_event(
                     namespace=namespace, watch=False, limit=500
                 )
             else:
-                console.print("[cyan]Fetching events for all namespaces[/cyan]")
+                # console.print("[cyan]Fetching events for all namespaces[/cyan]")
                 events_list_response = self.v1.list_event_for_all_namespaces(
                     watch=False, limit=1000
                 )
@@ -568,84 +568,76 @@ class KubernetesEventManager:
                 ),
             )
         console.print(table)
-        
+
         if streaming:
-            self._stream_events(events, show_timestamps, show_all_namespaces, sort_direction)
+            self._stream_events(
+                events, show_timestamps, show_all_namespaces, sort_direction
+            )
 
     def _stream_events(
         self,
-        initial_events: List[KubernetesEvent], 
+        initial_events: List[KubernetesEvent],
         show_timestamps: bool,
         show_all_namespaces: bool,
-        sort_direction: str
+        sort_direction: str,
     ) -> None:
         """Stream new events for the same owners as the initial events"""
-        import time
         import signal
         import sys
-        
+        import time
+
         if not initial_events:
             return
-            
+
         # Get unique owner UIDs from initial events
         owner_uids = set()
         for event in initial_events:
             if event.involved_object_uid:
                 owner_uids.add(event.involved_object_uid)
-        
-        console.print(f"\n[cyan]Streaming new events... Press Ctrl+C to exit[/cyan]")
-        
+
+        # Show simple streaming indicator
+        console.print(f"\n[cyan]🔄 Streaming new events... Press Ctrl+C to exit[/cyan]")
+
         def signal_handler(signum, frame):
             console.print("\n[yellow]Event streaming stopped[/yellow]")
             sys.exit(0)
-        
+
         signal.signal(signal.SIGINT, signal_handler)
-        
+
         try:
             last_check = datetime.now(timezone.utc)
-            
+
             while True:
                 time.sleep(2)  # Check for new events every 2 seconds
-                
+
                 # Fetch new events
                 namespace = initial_events[0].namespace if initial_events else None
                 new_events = self.fetch_events(namespace)
-                
+
                 # Filter to only new events for our owners
                 filtered_new_events = []
                 current_time = datetime.now(timezone.utc)
-                
+
                 for event in new_events:
                     event_time = event.last_timestamp or event.first_timestamp
-                    if (event_time and 
-                        event_time.replace(tzinfo=timezone.utc) > last_check and
-                        event.involved_object_uid in owner_uids):
+                    if (
+                        event_time
+                        and event_time.replace(tzinfo=timezone.utc) > last_check
+                        and event.involved_object_uid in owner_uids
+                    ):
                         filtered_new_events.append(event)
-                
+
                 if filtered_new_events:
-                    # Display new events using the same table format
-                    console.print(f"\n[green]New events ({len(filtered_new_events)}):[/green]")
-                    
-                    # Create a simple table for new events
-                    table = Table(
-                        show_header=False,
-                        box=rich.box.SIMPLE,
-                        show_lines=False,
-                        padding=(0, 1),
-                        border_style="dim white",
-                        style="white",
-                    )
-                    table.add_column("Time", no_wrap=True)
-                    table.add_column("Type", no_wrap=True)
-                    table.add_column("Reason", no_wrap=True)
-                    table.add_column("Type/Involved Object", no_wrap=True)
-                    table.add_column("Message")
-                    
+                    # Display new events by appending them to output
                     now = datetime.now(timezone.utc)
-                    
-                    for event in sorted(filtered_new_events, 
-                                      key=lambda e: e.last_timestamp or e.first_timestamp or datetime.min,
-                                      reverse=(sort_direction == "desc")):
+
+                    for event in sorted(
+                        filtered_new_events,
+                        key=lambda e: e.last_timestamp
+                        or e.first_timestamp
+                        or datetime.min,
+                        reverse=(sort_direction == "desc"),
+                    ):
                         ts_to_format = event.last_timestamp or event.first_timestamp
                         if ts_to_format:
                             ts_to_format = (
@@ -653,9 +645,11 @@ class KubernetesEventManager:
                                 if ts_to_format.tzinfo is None
                                 else ts_to_format
                             )
-                        
+
                         if show_timestamps or not ts_to_format:
-                            timestamp_str = str(ts_to_format) if ts_to_format else "unknown time"
+                            timestamp_str = (
+                                str(ts_to_format) if ts_to_format else "unknown time"
+                            )
                         else:
                             delta = now - ts_to_format
                             if delta.total_seconds() < 0:
@@ -668,26 +662,51 @@ class KubernetesEventManager:
                                 timestamp_str = f"{delta.seconds // 60}m ago"
                             else:
                                 timestamp_str = f"{delta.seconds}s ago"
-                        
+
+                        # Create a single-row table for each new event to maintain table formatting
+                        event_table = Table(
+                            show_header=False,
+                            box=rich.box.SIMPLE,
+                            show_lines=False,
+                            padding=(0, 1),
+                            border_style="dim white",
+                            style="white",
+                        )
+                        event_table.add_column("Time", no_wrap=True)
+                        event_table.add_column("Type", no_wrap=True)
+                        event_table.add_column("Reason", no_wrap=True)
+                        event_table.add_column("Type/Involved Object", no_wrap=True)
+                        event_table.add_column("Message")
+
                         resource_str = f"{event.involved_object_kind or 'UnknownKind'}/{event.involved_object_name or 'UnknownName'}"
-                        table.add_row(
+                        event_table.add_row(
                             Text(timestamp_str, style="cyan"),
                             Text(
                                 event.type or "N/A",
-                                style="red" if event.type and event.type != "Normal" else "white",
+                                style=(
+                                    "red"
+                                    if event.type and event.type != "Normal"
+                                    else "white"
+                                ),
                             ),
                             Text(event.reason or "N/A", style="cyan"),
                             Text(resource_str, style="white"),
                             Text(
                                 event.message or "",
-                                style="red" if event.type and event.type != "Normal" else "white",
+                                style=(
+                                    "red"
+                                    if event.type and event.type != "Normal"
+                                    else "white"
+                                ),
                             ),
                         )
-                    
-                    console.print(table)
-                
+
+                        # Print with a subtle indicator that this is a new event
+                        console.print("▶", end=" ", style="green")
+                        console.print(event_table)
+
                 last_check = current_time
-                
+
         except KeyboardInterrupt:
             console.print("\n[yellow]Event streaming stopped[/yellow]")
 
@@ -774,7 +793,9 @@ class KubeEventsInteractiveSelector:
         lines.append(
             (
                 self.style_definitions["header"],
-                "Select an owner using ↑↓, press Enter to view details, 'f' to follow events, 'q' to quit.\n",
+                """Events listed from the oldest to the newest. 
+Select an owner using ↑↓, press Enter to view details.
+Press 'f' to follow events, 'q' to quit.\n""",
             )
         )
 
@@ -973,8 +994,6 @@ class KubeEventsInteractiveSelector:
         self.result_events = application.run()
 
         return self.result_events
-
-
 
 
 def main() -> None:

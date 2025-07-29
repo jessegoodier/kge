@@ -13,9 +13,9 @@ A simple yet powerful CLI tool for viewing and monitoring Kubernetes events with
   - [Features](#features)
   - [Installation](#installation)
   - [Usage](#usage)
+    - [Interactive Mode](#interactive-mode)
     - [Basic Usage](#basic-usage)
     - [Viewing Events for Any Resource Type](#viewing-events-for-any-resource-type)
-    - [Interactive Mode](#interactive-mode)
     - [Shell Completion](#shell-completion)
   - [Examples](#examples)
   - [Known Issues](#known-issues)
@@ -50,6 +50,14 @@ pip install kge-kubectl-get-events
 
 ## Usage
 
+### Interactive Mode
+
+Run without arguments for interactive pod selection:
+
+```bash
+kge
+```
+
 ### Basic Usage
 
 View events for a specific pod:
@@ -58,23 +66,13 @@ View events for a specific pod:
 kge <pod-name>
 ```
 
-View all events in the current namespace:
+View events in all namespaces:
 
 ```bash
-kge -a
+kge -A
 ```
 
-View only non-normal events:
 
-```bash
-kge -e
-```
-
-Combine flags to view all non-normal events in the current namespace:
-
-```bash
-kge -ea
-```
 
 View events in a specific namespace:
 
@@ -90,18 +88,22 @@ View events for a specific resource type:
 kge -k <kind> <resource-name>
 ```
 
-### Interactive Mode
-
-Run without arguments for interactive pod selection:
-
-```bash
-kge
-```
-
 Check a different namespace than your current context:
 
 ```bash
 kge -n kubecost
+```
+
+TODO:View only non-normal events:
+
+```bash
+kge -e
+```
+
+Combine flags to view all non-normal events in the current namespace:
+
+```bash
+kge -ea
 ```
 
 ### Shell Completion
