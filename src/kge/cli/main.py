@@ -4,7 +4,7 @@ import asyncio
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import kubernetes  # type: ignore
 import rich.box  # type: ignore
@@ -596,9 +596,9 @@ class KubernetesEventManager:
                 owner_uids.add(event.involved_object_uid)
 
         # Show simple streaming indicator
-        console.print(f"\n[cyan]🔄 Streaming new events... Press Ctrl+C to exit[/cyan]")
+        console.print("\n[cyan]🔄 Streaming new events... Press Ctrl+C to exit[/cyan]")
 
-        def signal_handler(signum, frame):
+        def signal_handler(signum: int, frame: Any) -> None:
             console.print("\n[yellow]Event streaming stopped[/yellow]")
             sys.exit(0)
 
@@ -973,7 +973,7 @@ Press 'f' to follow events, 'q' to quit.\n""",
             self.result_events = None
             event.app.exit(None)
 
-    def run(self) -> Optional[List[KubernetesEvent]]:
+    def run(self) -> Optional[Union[List[KubernetesEvent], Tuple[str, List[KubernetesEvent]]]]:
         root_container = HSplit(
             [
                 Window(
@@ -1159,7 +1159,7 @@ def main() -> None:
                 streaming=True,  # Enable streaming mode
             )
             return
-        elif selector_result and isinstance(selector_result, list):
+        elif isinstance(selector_result, list):
             # selector_result contains the events list
             selected_owner_events_from_selector = selector_result
             console.print(

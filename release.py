@@ -161,7 +161,10 @@ def get_new_version(current_version, bump_type, commit=False):
         with open("pyproject.toml", "r") as f:
             pyproject_content = f.read()
         pyproject_content = re.sub(
-            r'version = "(.+)"', f'version = "{new_version}"', pyproject_content
+            r'version = "(.+)"',
+            f'version = "{new_version}"',
+            pyproject_content,
+            count=1,
         )
         if commit:
             with open("pyproject.toml", "w") as f:
@@ -170,7 +173,10 @@ def get_new_version(current_version, bump_type, commit=False):
         with open("src/kge/__init__.py", "r") as f:
             init_content = f.read()
         init_content = re.sub(
-            r'__version__ = "(.+)"', f'__version__ = "{new_version}"', init_content
+            r'__version__ = "(.+)"',
+            f'__version__ = "{new_version}"',
+            init_content,
+            count=1,
         )
         if commit:
             with open("src/kge/__init__.py", "w") as f:
