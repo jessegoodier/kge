@@ -582,9 +582,13 @@ class KubernetesEventManager:
         sort_direction: str,
     ) -> None:
         """Stream new events for the same owners as the initial events"""
+        import os
+        import select
         import signal
         import sys
+        import termios
         import time
+        import tty
 
         if not initial_events:
             return
@@ -596,7 +600,9 @@ class KubernetesEventManager:
                 owner_uids.add(event.involved_object_uid)
 
         # Show simple streaming indicator
-        console.print("\n[cyan]🔄 Streaming new events... Press Ctrl+C to exit[/cyan]")
+        console.print(
+            "\n[cyan]🔄 Streaming new events... Press 'q' or Ctrl+C to exit[/cyan]"
+        )
 
         def signal_handler(signum: int, frame: Any) -> None:
             console.print("\n[yellow]Event streaming stopped[/yellow]")
@@ -604,11 +610,28 @@ class KubernetesEventManager:
 
         signal.signal(signal.SIGINT, signal_handler)
 
+        # Set up terminal for non-blocking input
+        old_settings = None
+        if os.isatty(sys.stdin.fileno()):
+            old_settings = termios.tcgetattr(sys.stdin)
+            tty.setraw(sys.stdin.fileno())
+
         try:
             last_check = datetime.now(timezone.utc)
 
             while True:
-                time.sleep(2)  # Check for new events every 2 seconds
+                # Check for user input more frequently for responsiveness
+                for _ in range(20):  # Check for 'q' key 20 times over 2 seconds
+                    if os.isatty(sys.stdin.fileno()):
+                        ready, _, _ = select.select([sys.stdin], [], [], 0.1)
+                        if ready:
+                            char = sys.stdin.read(1)
+                            if char.lower() == "q":
+                                console.print(
+                                    "\n[yellow]Event streaming stopped[/yellow]"
+                                )
+                                return
+                    time.sleep(0.1)  # Sleep for 0.1 seconds between checks
 
                 # Fetch new events
                 namespace = initial_events[0].namespace if initial_events else None
@@ -709,6 +732,10 @@ class KubernetesEventManager:
 
         except KeyboardInterrupt:
             console.print("\n[yellow]Event streaming stopped[/yellow]")
+        finally:
+            # Restore terminal settings
+            if old_settings:
+                termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
 
 
 class KubeEventsInteractiveSelector:
