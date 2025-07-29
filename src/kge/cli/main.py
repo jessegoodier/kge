@@ -973,7 +973,9 @@ Press 'f' to follow events, 'q' to quit.\n""",
             self.result_events = None
             event.app.exit(None)
 
-    def run(self) -> Optional[Union[List[KubernetesEvent], Tuple[str, List[KubernetesEvent]]]]:
+    def run(
+        self,
+    ) -> Optional[Union[List[KubernetesEvent], Tuple[str, List[KubernetesEvent]]]]:
         root_container = HSplit(
             [
                 Window(
