@@ -488,6 +488,7 @@ class KubernetesEventManager:
         show_timestamps: bool = False,
         show_all_namespaces: bool = False,
         sort_direction: str = "asc",
+        streaming: bool = False,
     ) -> None:
         if not events:
             console.print(
@@ -567,6 +568,128 @@ class KubernetesEventManager:
                 ),
             )
         console.print(table)
+        
+        if streaming:
+            self._stream_events(events, show_timestamps, show_all_namespaces, sort_direction)
+
+    def _stream_events(
+        self,
+        initial_events: List[KubernetesEvent], 
+        show_timestamps: bool,
+        show_all_namespaces: bool,
+        sort_direction: str
+    ) -> None:
+        """Stream new events for the same owners as the initial events"""
+        import time
+        import signal
+        import sys
+        
+        if not initial_events:
+            return
+            
+        # Get unique owner UIDs from initial events
+        owner_uids = set()
+        for event in initial_events:
+            if event.involved_object_uid:
+                owner_uids.add(event.involved_object_uid)
+        
+        console.print(f"\n[cyan]Streaming new events... Press Ctrl+C to exit[/cyan]")
+        
+        def signal_handler(signum, frame):
+            console.print("\n[yellow]Event streaming stopped[/yellow]")
+            sys.exit(0)
+        
+        signal.signal(signal.SIGINT, signal_handler)
+        
+        try:
+            last_check = datetime.now(timezone.utc)
+            
+            while True:
+                time.sleep(2)  # Check for new events every 2 seconds
+                
+                # Fetch new events
+                namespace = initial_events[0].namespace if initial_events else None
+                new_events = self.fetch_events(namespace)
+                
+                # Filter to only new events for our owners
+                filtered_new_events = []
+                current_time = datetime.now(timezone.utc)
+                
+                for event in new_events:
+                    event_time = event.last_timestamp or event.first_timestamp
+                    if (event_time and 
+                        event_time.replace(tzinfo=timezone.utc) > last_check and
+                        event.involved_object_uid in owner_uids):
+                        filtered_new_events.append(event)
+                
+                if filtered_new_events:
+                    # Display new events using the same table format
+                    console.print(f"\n[green]New events ({len(filtered_new_events)}):[/green]")
+                    
+                    # Create a simple table for new events
+                    table = Table(
+                        show_header=False,
+                        box=rich.box.SIMPLE,
+                        show_lines=False,
+                        padding=(0, 1),
+                        border_style="dim white",
+                        style="white",
+                    )
+                    table.add_column("Time", no_wrap=True)
+                    table.add_column("Type", no_wrap=True)
+                    table.add_column("Reason", no_wrap=True)
+                    table.add_column("Type/Involved Object", no_wrap=True)
+                    table.add_column("Message")
+                    
+                    now = datetime.now(timezone.utc)
+                    
+                    for event in sorted(filtered_new_events, 
+                                      key=lambda e: e.last_timestamp or e.first_timestamp or datetime.min,
+                                      reverse=(sort_direction == "desc")):
+                        ts_to_format = event.last_timestamp or event.first_timestamp
+                        if ts_to_format:
+                            ts_to_format = (
+                                ts_to_format.replace(tzinfo=timezone.utc)
+                                if ts_to_format.tzinfo is None
+                                else ts_to_format
+                            )
+                        
+                        if show_timestamps or not ts_to_format:
+                            timestamp_str = str(ts_to_format) if ts_to_format else "unknown time"
+                        else:
+                            delta = now - ts_to_format
+                            if delta.total_seconds() < 0:
+                                timestamp_str = "in future?"
+                            elif delta.days > 0:
+                                timestamp_str = f"{delta.days}d ago"
+                            elif delta.seconds >= 3600:
+                                timestamp_str = f"{delta.seconds // 3600}h ago"
+                            elif delta.seconds >= 60:
+                                timestamp_str = f"{delta.seconds // 60}m ago"
+                            else:
+                                timestamp_str = f"{delta.seconds}s ago"
+                        
+                        resource_str = f"{event.involved_object_kind or 'UnknownKind'}/{event.involved_object_name or 'UnknownName'}"
+                        table.add_row(
+                            Text(timestamp_str, style="cyan"),
+                            Text(
+                                event.type or "N/A",
+                                style="red" if event.type and event.type != "Normal" else "white",
+                            ),
+                            Text(event.reason or "N/A", style="cyan"),
+                            Text(resource_str, style="white"),
+                            Text(
+                                event.message or "",
+                                style="red" if event.type and event.type != "Normal" else "white",
+                            ),
+                        )
+                    
+                    console.print(table)
+                
+                last_check = current_time
+                
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Event streaming stopped[/yellow]")
 
 
 class KubeEventsInteractiveSelector:
@@ -651,7 +774,7 @@ class KubeEventsInteractiveSelector:
         lines.append(
             (
                 self.style_definitions["header"],
-                "Select an owner using ↑↓, press Enter to view details, 'q' to quit.\n",
+                "Select an owner using ↑↓, press Enter to view details, 'f' to follow events, 'q' to quit.\n",
             )
         )
 
@@ -814,6 +937,15 @@ class KubeEventsInteractiveSelector:
             else:
                 event.app.exit(None)
 
+        @self.key_bindings.add("f")  # type: ignore[misc]
+        def _(event: Any) -> None:
+            if self.sorted_owner_uids:
+                selected_uid = self.sorted_owner_uids[self.selected_index]
+                selected_events = self.grouped_data[selected_uid]["events"]
+                event.app.exit(("follow_events", selected_events))
+            else:
+                event.app.exit(None)
+
         @self.key_bindings.add("c-c", eager=True)  # type: ignore[misc]
         @self.key_bindings.add("q", eager=True)  # type: ignore[misc]
         def _(event: Any) -> None:
@@ -841,6 +973,8 @@ class KubeEventsInteractiveSelector:
         self.result_events = application.run()
 
         return self.result_events
+
+
 
 
 def main() -> None:
@@ -981,9 +1115,34 @@ def main() -> None:
             show_all_namespaces=args.all,
             sort_direction=args.sort_direction,
         )
-        selected_owner_events_from_selector = selector.run()
+        selector_result = selector.run()
 
-        if selected_owner_events_from_selector:
+        # Handle different result types from selector
+        if isinstance(selector_result, tuple) and selector_result[0] == "follow_events":
+            # User pressed 'f' to follow events
+            selected_events = selector_result[1]
+            console.print(
+                f"\n[white]Following Events for[/white]"
+                f"[cyan] {selected_events[0].involved_object_kind or 'UnknownKind'} "
+                f"{selected_events[0].involved_object_name}[/cyan]"
+                f"[white] in namespace:[/white] [cyan]{selected_events[0].namespace or 'cluster'}[/cyan]"
+            )
+            filtered_events = event_manager_instance.filter_events(
+                selected_events,
+                kind_filter=args.kind,
+                type_filter=args.type,
+            )
+            event_manager_instance.display_events_table(
+                filtered_events,
+                args.show_timestamps,
+                args.all,
+                args.sort_direction,
+                streaming=True,  # Enable streaming mode
+            )
+            return
+        elif selector_result and isinstance(selector_result, list):
+            # selector_result contains the events list
+            selected_owner_events_from_selector = selector_result
             console.print(
                 f"\n[white]Detailed Events for[/white]"
                 f"[cyan] {selected_owner_events_from_selector[0].involved_object_kind or 'UnknownKind'} "
