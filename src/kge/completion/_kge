@@ -11,7 +11,9 @@ _kge() {
         '(-n --namespace)'{-n,--namespace}'[Namespace to fetch events from]:namespace:->namespaces' \
         '(-k --kind)'{-k,--kind}'[Filter events by involved object kind]:kind:->kinds' \
         '(-t --type)'{-t,--type}'[Filter events by type]:type:->types' \
+        '(--poll)'--poll'[Auto-refresh interval in seconds]:interval:->interval' \
         '(--show-timestamps)'--show-timestamps'[Show absolute timestamps]' \
+        '(--sort-direction)'--sort-direction'[Sort events by timestamp]:sort_direction:(asc desc)' \
         '(--completion)'--completion'[Generate shell completion script]:completion:(zsh)'
 
     case $state in
