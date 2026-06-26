@@ -1,0 +1,157 @@
+name: kge release pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump-level:
+        description: "Is this a major/minor/patch? Breaking changes should be a minor bump. Fixes are patches."
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      prerelease:
+        description: "Mark this release as a pre-release."
+        required: false
+        type: boolean
+        default: false
+      notes:
+        description: "Optional extra release notes (prepended to auto-generated changelog)."
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: write # required for creating the GitHub Release
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Set up Python
+        run: uv python install
+
+      - name: Sync dependencies
+        run: uv sync --locked --all-extras
+
+      - name: Bump version
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          set -euo pipefail
+          uv version --bump ${{ inputs.bump-level }}
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml uv.lock
+          git commit -m "chore: bump version to v$(uv version --short)"
+          git push
+
+      - name: Compute identifiers
+        id: id
+        run: |
+          set -euo pipefail
+          PY_VERSION=$(uv version --short)
+          TS=$(date -u +'%Y%m%d-%H%M%S')
+          SHORT_SHA=${GITHUB_SHA::7}
+          ARTIFACT_NAME="kge-${PY_VERSION}-${TS}-${SHORT_SHA}"
+
+          # FIXED: inputs.version does not exist as a workflow input — it was always
+          # empty, producing RELEASE_TAG="v" and breaking every dispatch release.
+          # Derive the tag from PY_VERSION instead (already computed above).
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            RELEASE_TAG="v${PY_VERSION}"
+          else
+            RELEASE_TAG=""
+          fi
+
+          echo "py_version=$PY_VERSION"       >> "$GITHUB_OUTPUT"
+          echo "ts=$TS"                       >> "$GITHUB_OUTPUT"
+          echo "short_sha=$SHORT_SHA"         >> "$GITHUB_OUTPUT"
+          echo "artifact_name=$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$RELEASE_TAG"     >> "$GITHUB_OUTPUT"
+
+      - name: Verify release tag is unused
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.id.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::Release ${TAG} already exists. Bump the version input and re-run."
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "::error::Git tag ${TAG} already exists. Bump the version input and re-run."
+            exit 1
+          fi
+          echo "Tag ${TAG} is available."
+
+      - name: Build wheel + sdist
+        run: uv build
+
+      - name: Bundle source archive
+        run: |
+          set -euo pipefail
+          git archive --format=tar.gz \
+            --prefix=${{ steps.id.outputs.artifact_name }}/ \
+            -o dist/${{ steps.id.outputs.artifact_name }}-source.tar.gz HEAD
+
+      - name: Stage installer (if present)
+        run: |
+          set -euo pipefail
+          if [ -f install.sh ]; then
+            cp install.sh dist/install.sh
+            chmod +x dist/install.sh
+            echo "Installer staged at dist/install.sh"
+          else
+            echo "No ./install.sh yet — skipping."
+          fi
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v7 # TODO: pin to SHA
+        with:
+          name: ${{ steps.id.outputs.artifact_name }}
+          path: dist/*
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.id.outputs.release_tag }}
+          EXTRA_NOTES: ${{ inputs.notes }}
+          PRERELEASE_FLAG: ${{ inputs.prerelease && '--prerelease' || '' }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(dist/*)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::No files in dist/ to attach to the release."
+            exit 1
+          fi
+          if [ -n "$EXTRA_NOTES" ]; then
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --notes "$EXTRA_NOTES" \
+              --generate-notes \
+              $PRERELEASE_FLAG \
+              "${files[@]}"
+          else
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --generate-notes \
+              $PRERELEASE_FLAG \
+              "${files[@]}"
+          fi
