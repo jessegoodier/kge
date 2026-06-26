@@ -72,8 +72,6 @@ View events in all namespaces:
 kge -A
 ```
 
-
-
 View events in a specific namespace:
 
 ```bash
@@ -104,6 +102,12 @@ Combine flags to view all non-normal events in the current namespace:
 
 ```bash
 kge -ea
+```
+
+View events with auto-refresh:
+
+```bash
+kge --poll 15
 ```
 
 ### Shell Completion

@@ -1,24 +1,27 @@
-#! /usr/bin/env python3
 import argparse
 import asyncio
+import contextlib
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Protocol, Tuple, Union, cast
 
-import kubernetes  # type: ignore
-import rich.box  # type: ignore
+import kubernetes  # type: ignore[import-untyped]
+import rich.box
 
 # Prompt-toolkit imports
-from prompt_toolkit import Application  # type: ignore
-from prompt_toolkit.formatted_text import FormattedText, to_formatted_text  # type: ignore
-from prompt_toolkit.key_binding import KeyBindings  # type: ignore
-from prompt_toolkit.layout import HSplit, Layout, Window  # type: ignore
-from prompt_toolkit.layout.controls import FormattedTextControl  # type: ignore
-from prompt_toolkit.styles import Style  # type: ignore
-from rich.console import Console  # type: ignore
-from rich.table import Table  # type: ignore
-from rich.text import Text  # type: ignore
+from prompt_toolkit import Application
+from prompt_toolkit.formatted_text import (
+    FormattedText,
+    to_formatted_text,
+)
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.layout import HSplit, Layout, Window
+from prompt_toolkit.layout.controls import FormattedTextControl
+from prompt_toolkit.styles import Style
+from rich.console import Console
+from rich.table import Table
+from rich.text import Text
 
 from kge import __version__
 
@@ -92,16 +95,26 @@ class KubernetesEvent:
         }
 
 
+class KubernetesEventSource(Protocol):
+    def fetch_events(
+        self, namespace: Optional[str] = None
+    ) -> List[KubernetesEvent]: ...
+
+    def group_events_by_owner(
+        self, events: List[KubernetesEvent], sort_direction: str = "asc"
+    ) -> Dict[str, Dict[str, Any]]: ...
+
+
 class KubernetesEventManager:
     """Manages Kubernetes events fetching and processing."""
 
     def __init__(self) -> None:
-        self._object_fetch_cache: Dict[Tuple, Optional[Any]] = (
-            {}
-        )  # Cache for fetched K8s objects
-        self._owner_resolution_cache: Dict[Tuple, Dict[str, str]] = (
-            {}
-        )  # Cache for resolved owners
+        self._object_fetch_cache: Dict[
+            Tuple, Optional[Any]
+        ] = {}  # Cache for fetched K8s objects
+        self._owner_resolution_cache: Dict[
+            Tuple, Dict[str, str]
+        ] = {}  # Cache for resolved owners
         self._init_kubernetes_client()
 
     def _init_kubernetes_client(self) -> None:
@@ -379,9 +392,9 @@ class KubernetesEventManager:
                     current_event_ts
                     > grouped_by_owner_uid[owner_uid_str]["latest_event_timestamp"]
                 ):
-                    grouped_by_owner_uid[owner_uid_str][
-                        "latest_event_timestamp"
-                    ] = current_event_ts
+                    grouped_by_owner_uid[owner_uid_str]["latest_event_timestamp"] = (
+                        current_event_ts
+                    )
                     grouped_by_owner_uid[owner_uid_str]["latest_event_type"] = (
                         event.type or "N/A"
                     )
@@ -656,9 +669,9 @@ class KubernetesEventManager:
 
                     for event in sorted(
                         filtered_new_events,
-                        key=lambda e: e.last_timestamp
-                        or e.first_timestamp
-                        or datetime.min,
+                        key=lambda e: (
+                            e.last_timestamp or e.first_timestamp or datetime.min
+                        ),
                         reverse=(sort_direction == "desc"),
                     ):
                         ts_to_format = event.last_timestamp or event.first_timestamp
@@ -741,27 +754,24 @@ class KubernetesEventManager:
 class KubeEventsInteractiveSelector:
     def __init__(
         self,
-        grouped_data: Dict[str, Dict[str, Any]],
+        grouped_data: Optional[Dict[str, Dict[str, Any]]] = None,
+        event_manager: Optional[KubernetesEventSource] = None,
+        namespace: Optional[str] = None,
         show_timestamps: bool = False,
         show_all_namespaces: bool = False,
         sort_direction: str = "asc",
+        polling_interval: int = 0,
     ):
-        # Use sort_direction to determine reverse sorting
-        # asc = oldest first (reverse=False), desc = newest first (reverse=True)
-        sort_reverse = sort_direction == "desc"
-
-        self.grouped_data = grouped_data
+        self.event_manager = event_manager
+        self.namespace = namespace
+        self.grouped_data: Dict[str, Dict[str, Any]] = {}
         self.show_timestamps = show_timestamps
         self.show_all_namespaces = show_all_namespaces
         self.sort_direction = sort_direction
-        self.sorted_owner_uids = sorted(
-            self.grouped_data.keys(),
-            key=lambda uid: (
-                self.grouped_data[uid]["latest_event_timestamp"]
-                or datetime.min.replace(tzinfo=timezone.utc)
-            ),
-            reverse=sort_reverse,
-        )
+        self.polling_interval = polling_interval
+        self.sorted_owner_uids: List[str] = []
+        self.selected_index = 0
+        self._set_grouped_data(grouped_data or {})
 
         # Default to the most recent event group
         # When sort_direction is "desc", most recent is at index 0
@@ -776,7 +786,9 @@ class KubeEventsInteractiveSelector:
         else:
             self.selected_index = 0
 
-        self.result_events: Optional[List[KubernetesEvent]] = None
+        self.result_events: Optional[
+            Union[List[KubernetesEvent], Tuple[str, List[KubernetesEvent]]]
+        ] = None
 
         self.key_bindings = KeyBindings()
         self._setup_key_bindings()
@@ -790,6 +802,33 @@ class KubeEventsInteractiveSelector:
             "type-warning-override-fg": "fg:#ffff00 bold",  # yellow foreground for non-Normal types + bold
         }
         self.style = Style.from_dict(self.style_definitions)
+
+    def _sort_owner_uids(self) -> List[str]:
+        # asc = oldest first (reverse=False), desc = newest first (reverse=True)
+        sort_reverse = self.sort_direction == "desc"
+        return sorted(
+            self.grouped_data.keys(),
+            key=lambda uid: (
+                self.grouped_data[uid]["latest_event_timestamp"]
+                or datetime.min.replace(tzinfo=timezone.utc)
+            ),
+            reverse=sort_reverse,
+        )
+
+    def _set_grouped_data(self, grouped_data: Dict[str, Dict[str, Any]]) -> None:
+        current_selected_uid = None
+        if 0 <= self.selected_index < len(self.sorted_owner_uids):
+            current_selected_uid = self.sorted_owner_uids[self.selected_index]
+
+        self.grouped_data = grouped_data
+        self.sorted_owner_uids = self._sort_owner_uids()
+
+        if current_selected_uid and current_selected_uid in self.sorted_owner_uids:
+            self.selected_index = self.sorted_owner_uids.index(current_selected_uid)
+        elif self.sorted_owner_uids:
+            self.selected_index = 0
+        else:
+            self.selected_index = 0
 
     def _format_relative_time(self, timestamp: Optional[datetime]) -> str:
         if timestamp is None:
@@ -820,7 +859,7 @@ class KubeEventsInteractiveSelector:
         lines.append(
             (
                 self.style_definitions["header"],
-                """Events listed from the oldest to the newest. 
+                """Events listed from the oldest to the newest.
 Select an owner using ↑↓, press Enter to view details.
 Press 'f' to follow events, 'q' to quit.\n""",
             )
@@ -830,7 +869,7 @@ Press 'f' to follow events, 'q' to quit.\n""",
             lines.append(
                 (self.style_definitions["info"], "No event groups to display.\n")
             )
-            return to_formatted_text(lines)
+            return to_formatted_text(cast(Any, lines))
 
         # Calculate maximum widths for each column
         max_time_width = 27 if self.show_timestamps else 15  # Wider for timestamps
@@ -963,20 +1002,50 @@ Press 'f' to follow events, 'q' to quit.\n""",
                 ]
             lines.extend(current_line_parts)
 
-        return to_formatted_text(lines)
+        return to_formatted_text(cast(Any, lines))
+
+    async def _refresh_data(self) -> None:
+        if self.event_manager is None:
+            return
+
+        new_events = await asyncio.to_thread(
+            self.event_manager.fetch_events, self.namespace
+        )
+        new_grouped = await asyncio.to_thread(
+            self.event_manager.group_events_by_owner,
+            new_events,
+            self.sort_direction,
+        )
+        self._set_grouped_data(new_grouped)
+
+    # Task to update the UI gradually.
+    async def _background_updater(self, app: Application) -> None:
+        # Do not create the task if polling interval is not set.
+        if self.polling_interval <= 0:
+            return
+        while True:
+            try:
+                await asyncio.sleep(self.polling_interval)
+
+                await self._refresh_data()
+
+                app.invalidate()
+
+            except Exception:
+                pass
 
     def _setup_key_bindings(self) -> None:
-        @self.key_bindings.add("up")  # type: ignore[misc]
+        @self.key_bindings.add("up")
         def _(event: Any) -> None:
             self.selected_index = max(0, self.selected_index - 1)
 
-        @self.key_bindings.add("down")  # type: ignore[misc]
+        @self.key_bindings.add("down")
         def _(event: Any) -> None:
             self.selected_index = min(
                 len(self.sorted_owner_uids) - 1, self.selected_index + 1
             )
 
-        @self.key_bindings.add("enter")  # type: ignore[misc]
+        @self.key_bindings.add("enter")
         def _(event: Any) -> None:
             if self.sorted_owner_uids:
                 selected_uid = self.sorted_owner_uids[self.selected_index]
@@ -985,7 +1054,7 @@ Press 'f' to follow events, 'q' to quit.\n""",
             else:
                 event.app.exit(None)
 
-        @self.key_bindings.add("f")  # type: ignore[misc]
+        @self.key_bindings.add("f")
         def _(event: Any) -> None:
             if self.sorted_owner_uids:
                 selected_uid = self.sorted_owner_uids[self.selected_index]
@@ -994,13 +1063,13 @@ Press 'f' to follow events, 'q' to quit.\n""",
             else:
                 event.app.exit(None)
 
-        @self.key_bindings.add("c-c", eager=True)  # type: ignore[misc]
-        @self.key_bindings.add("q", eager=True)  # type: ignore[misc]
+        @self.key_bindings.add("c-c", eager=True)
+        @self.key_bindings.add("q", eager=True)
         def _(event: Any) -> None:
             self.result_events = None
             event.app.exit(None)
 
-    def run(
+    async def run(
         self,
     ) -> Optional[Union[List[KubernetesEvent], Tuple[str, List[KubernetesEvent]]]]:
         root_container = HSplit(
@@ -1013,14 +1082,24 @@ Press 'f' to follow events, 'q' to quit.\n""",
             ]
         )
 
-        application = Application(
+        application: Application[Any] = Application(
             layout=Layout(root_container),
             key_bindings=self.key_bindings,
             full_screen=True,
             style=self.style,
         )
 
-        self.result_events = application.run()
+        updater_task: Optional[asyncio.Task[None]] = None
+        if self.polling_interval > 0:
+            updater_task = asyncio.create_task(self._background_updater(application))
+
+        try:
+            self.result_events = await application.run_async()
+        finally:
+            if updater_task:
+                updater_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await updater_task
 
         return self.result_events
 
@@ -1043,6 +1122,14 @@ def main() -> None:
     parser.add_argument(
         "-k", "--kind", help="Filter selected owner's events by involved object kind"
     )
+    parser.add_argument(
+        "--poll",
+        type=int,
+        default=0,
+        metavar="SECONDS",
+        help="Enable auto-refresh of the TUI every N seconds (default: 0, disabled)",
+    )
+
     parser.add_argument("-t", "--type", help="Filter selected owner's events by type")
     parser.add_argument(
         "--show-timestamps", action="store_true", help="Show absolute timestamps"
@@ -1063,6 +1150,8 @@ def main() -> None:
     parser.add_argument("--complete-kind", action="store_true", help=argparse.SUPPRESS)
 
     args = parser.parse_args()
+    if args.poll < 0:
+        parser.error("--poll must be 0 or greater")
 
     # Handle completion script generation
     if args.completion:
@@ -1131,39 +1220,24 @@ def main() -> None:
                 )
                 namespace_arg = None
 
-        console.print("[cyan]Loading events from Kubernetes...[/cyan]")
-        all_events: Optional[List[KubernetesEvent]] = asyncio.run(
-            asyncio.to_thread(event_manager_instance.fetch_events, namespace_arg)
-        )
-        if not all_events:
-            ns_display = namespace_arg or "all"
-            console.print(
-                f"[yellow]No recent events found in the {ns_display} namespace(s).[/yellow]"
-            )
-            sys.exit(0)
-
-        console.print("[cyan]Grouping events by owner...[/cyan]")
-        grouped_data = asyncio.run(
-            asyncio.to_thread(
-                event_manager_instance.group_events_by_owner,
-                all_events,
-                args.sort_direction,
-            )
-        )
-
-        if not grouped_data:
-            console.print(
-                "[yellow]No event groups to display after processing.[/yellow]"
-            )
-            sys.exit(0)
-
         selector = KubeEventsInteractiveSelector(
-            grouped_data=grouped_data,
+            grouped_data=None,
+            event_manager=event_manager_instance,
+            namespace=namespace_arg,
             show_timestamps=args.show_timestamps,
             show_all_namespaces=args.all,
             sort_direction=args.sort_direction,
+            polling_interval=args.poll,
         )
-        selector_result = selector.run()
+
+        # Load initial data
+        asyncio.run(selector._refresh_data())
+
+        if not selector.grouped_data:
+            console.print("[yellow]No events found...[/yellow]")
+            sys.exit(0)
+
+        selector_result = asyncio.run(selector.run())
 
         # Handle different result types from selector
         if isinstance(selector_result, tuple) and selector_result[0] == "follow_events":
