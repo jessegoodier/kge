@@ -8,21 +8,23 @@ from kge.completion import get_completion_path, install_completion
 
 
 @pytest.fixture
-def completion_dir(tmp_path):
+def completion_dir(tmp_path: Path) -> Path:
     """Create a temporary completion directory."""
     completion_dir = tmp_path / ".zsh" / "completions"
     completion_dir.mkdir(parents=True)
     return completion_dir
 
 
-def test_get_completion_path():
+def test_get_completion_path() -> None:
     """Test that completion path is correctly determined."""
     path = get_completion_path()
     assert path.exists()
     assert path.name == "_kge"
 
 
-def test_install_completion(completion_dir, monkeypatch):
+def test_install_completion(
+    completion_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Test installation of completion script."""
     # Mock home directory to use our temporary directory
     monkeypatch.setattr(Path, "home", lambda: completion_dir.parent.parent)
@@ -37,7 +39,9 @@ def test_install_completion(completion_dir, monkeypatch):
     assert target.resolve() == get_completion_path()
 
 
-def test_install_completion_existing_file(completion_dir, monkeypatch):
+def test_install_completion_existing_file(
+    completion_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Test installation when a regular file already exists."""
     # Mock home directory
     monkeypatch.setattr(Path, "home", lambda: completion_dir.parent.parent)
@@ -58,7 +62,9 @@ def test_install_completion_existing_file(completion_dir, monkeypatch):
     assert target.resolve() == get_completion_path()
 
 
-def test_install_completion_existing_symlink(completion_dir, monkeypatch):
+def test_install_completion_existing_symlink(
+    completion_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Test installation when a symlink already exists."""
     # Mock home directory
     monkeypatch.setattr(Path, "home", lambda: completion_dir.parent.parent)

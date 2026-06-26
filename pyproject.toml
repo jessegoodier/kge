@@ -7,8 +7,8 @@ readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.11,<4.0"
 dependencies = [
-    "rich>=13.7.0,<14.0.0",
-    "kubernetes>=32.0.1,<33.0.0",
+    "rich>=15",
+    "kubernetes>=36.0.2",
     "prompt_toolkit"
 ]
 keywords = ["kubernetes", "troubleshooting", "kubectl", "events", "pod", "replicaset", "failed", "event"]
@@ -77,12 +77,12 @@ warn_unreachable = true
 
 [dependency-groups]
 dev = [
-    "ruff>=0.12.5",
+    "ruff>=0.15.20",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.0.0,<9.0.0",
+    "pytest>=9.1.1",
     "black",
     "isort",
     "mypy",
