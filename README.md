@@ -4,6 +4,15 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![PyPI](https://img.shields.io/pypi/v/kge-kubectl-get-events)](https://pypi.org/project/kge-kubectl-get-events/)
 
+I currently am using the kge aliases in oh-my-zsh. I am no longer actively maintaining this utility, but it works.
+
+Suggested aliases:
+
+```text
+kge      | `kubectl get events --sort-by=".lastTimestamp"`         | Get events (sorted by timestamp)                                                                 |
+kgew     | `kubectl get events --watch --sort-by=".lastTimestamp"` | Get events and watch as they occur (sorted by timestamp)   
+```
+
 A simple yet powerful CLI tool for viewing and monitoring Kubernetes events with a focus on readability and ease of use. `kge` provides an intuitive interface to quickly diagnose issues.
 
 ## Table of Contents
@@ -35,17 +44,16 @@ A simple yet powerful CLI tool for viewing and monitoring Kubernetes events with
 
 ## Installation
 
-A brew formula is a WIP. Until then, use pipx. Which can be installed with `brew install pipx`
-Pipx is like brew, only for python.
+Install with uv as an isolated CLI tool:
 
 ```bash
-# Install using pipx (recommended)
-pipx install kge-kubectl-get-events
+uv tool install kge-kubectl-get-events
 ```
 
+Run without installing:
+
 ```bash
-# Or install using pip, but not as easy
-pip install kge-kubectl-get-events
+uvx --from kge-kubectl-get-events kge
 ```
 
 ## Usage
@@ -143,6 +151,12 @@ View events for a Deployment:
 
 ```bash
 kge -k Deployment my-deployment
+```
+
+Refresh events every 15 seconds:
+
+```bash
+kge --poll 15
 ```
 
 ## Known Issues
